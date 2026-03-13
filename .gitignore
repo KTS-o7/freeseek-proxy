@@ -1,0 +1,40 @@
+# Node / Bun
+node_modules/
+dist/
+.bun/
+bun-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+cookies.json
+login.json
+
+# Python
+.venv/
+.venv*/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Coverage / logs
+.coverage
+.coverage.*
+htmlcov/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db

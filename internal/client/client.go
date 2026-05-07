@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 
 	utls "github.com/refraction-networking/utls"
+	"golang.org/x/net/http2"
 
 	"github.com/KTS-o7/freeseek-proxy/internal/auth"
 	"github.com/KTS-o7/freeseek-proxy/internal/cookies"
@@ -201,6 +203,7 @@ func isCloudflareResp(resp *http.Response) bool {
 }
 
 // newUTLSTransport returns an http.RoundTripper using utls Chrome-120 fingerprint.
+// It negotiates ALPN and speaks HTTP/2 or HTTP/1.1 accordingly.
 func newUTLSTransport() http.RoundTripper {
 	return &utlsTransport{}
 }
@@ -214,25 +217,57 @@ func (t *utlsTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		port = "443"
 	}
 
-	conn, err := net.Dial("tcp", host+":"+port)
+	tcpConn, err := net.Dial("tcp", host+":"+port)
 	if err != nil {
 		return nil, err
 	}
 
-	uconn := utls.UClient(conn, &utls.Config{
+	uconn := utls.UClient(tcpConn, &utls.Config{
 		ServerName: host,
+		// Allow the server to send h2 in ALPN; utls Chrome_120 includes it.
+		InsecureSkipVerify: false,
 	}, utls.HelloChrome_120)
 
 	if err := uconn.Handshake(); err != nil {
-		conn.Close()
+		tcpConn.Close()
 		return nil, err
 	}
 
-	// Use a fresh transport with the already-handshaked TLS conn
-	transport := &http.Transport{
-		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return uconn, nil
-		},
+	switch uconn.ConnectionState().NegotiatedProtocol {
+	case "h2":
+		// HTTP/2 over utls connection
+		t2 := &http2.Transport{
+			DialTLSContext: func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
+				// Return the already-handshaked utls conn on first call.
+				// Subsequent calls (keep-alive reuse) get a fresh utls conn.
+				c, err2 := net.Dial("tcp", addr)
+				if err2 != nil {
+					return nil, err2
+				}
+				uc := utls.UClient(c, &utls.Config{ServerName: host}, utls.HelloChrome_120)
+				if err2 := uc.Handshake(); err2 != nil {
+					c.Close()
+					return nil, err2
+				}
+				return uc, nil
+			},
+		}
+		// Use the pre-handshaked conn directly by wrapping it.
+		// http2.Transport.NewClientConn lets us inject an existing conn.
+		cc, err := t2.NewClientConn(uconn)
+		if err != nil {
+			uconn.Close()
+			return nil, err
+		}
+		return cc.RoundTrip(req)
+
+	default:
+		// HTTP/1.1 over utls connection
+		t1 := &http.Transport{
+			DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return uconn, nil
+			},
+		}
+		return t1.RoundTrip(req)
 	}
-	return transport.RoundTrip(req)
 }

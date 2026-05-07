@@ -38,3 +38,5 @@ htmlcov/
 # OS / editor
 .DS_Store
 Thumbs.db
+freeseek-proxy
+freeseek-proxy-linux

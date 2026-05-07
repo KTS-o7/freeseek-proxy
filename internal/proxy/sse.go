@@ -50,6 +50,11 @@ func ParseLine(line string, includeThinking bool) *SSEEvent {
 	if !includeThinking && strings.Contains(d.P, "thinking") {
 		return evt
 	}
+	// Skip title fragment: DeepSeek sends the auto-generated chat title via
+	// p="response/fragments/-1/content". Index -1 is never a real content fragment.
+	if strings.Contains(d.P, "/-1/") {
+		return evt
+	}
 
 	switch v := d.V.(type) {
 	case string:
@@ -76,11 +81,13 @@ func ParseLine(line string, includeThinking bool) *SSEEvent {
 				evt.Content += frag.Content
 			}
 		}
+	// []interface{} is the final accumulated-response array; skip it entirely —
+	// content was already streamed token by token above.
 	}
 
-	if evt.Content == "" && d.Content != "" {
-		evt.Content = d.Content
-	}
+	// NOTE: d.Content is NOT used as a fallback. DeepSeek populates it with the
+	// auto-generated chat session title at the end of the stream, which must not
+	// appear in the assistant reply.
 
 	return evt
 }
@@ -88,6 +95,7 @@ func ParseLine(line string, includeThinking bool) *SSEEvent {
 // CollectFull reads a DeepSeek SSE stream and returns the full text + last message ID.
 func CollectFull(r io.Reader, includeThinking bool) (text string, msgID interface{}) {
 	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1 MB line buffer for long responses
 	for scanner.Scan() {
 		evt := ParseLine(scanner.Text(), includeThinking)
 		if evt == nil {

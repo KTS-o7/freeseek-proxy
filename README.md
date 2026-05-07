@@ -1,395 +1,366 @@
-# DeepSeek Proxy
+# freeseek-proxy
 
-An OpenAI-compatible API proxy for DeepSeek, enabling use with any OpenAI-compatible client including opencode, Claude Code, Cursor, and other AI coding tools.
+An OpenAI-compatible API proxy for [DeepSeek](https://chat.deepseek.com) and [Taalas (chatjimmy.ai)](https://chatjimmy.ai), enabling use with any OpenAI-compatible client including opencode, Claude Code, Cursor, LangChain, and more.
+
+> **New in v2:** The entire stack is now a single self-contained Go binary — no Python, no Node.js, no runtime dependencies. Copy it to your VPS and run it.
+
+---
 
 ## Features
 
-- OpenAI-compatible `/v1/chat/completions` endpoint
+- **Single Go binary** — ~12MB, ~20-50MB RAM, no runtime needed
+- **OpenAI-compatible API** — drop-in replacement for `api.openai.com`
+- **DeepSeek models** — `deepseek-v3`, `deepseek-r1` (and legacy aliases)
+- **Taalas (chatjimmy.ai)** — free Llama 3.1 8B model, no auth required
 - Streaming and non-streaming responses
-- Multiple DeepSeek models: `deepseek-chat`, `deepseek-coder`, `deepseek-reasoner`
-- Optional API key authentication
-- Built-in chat UI at `/`
-- Automatic session management
-- Optional request controls for thinking, search, and parent message threading
-- No enforced proxy timeout for long-running conversations
-- Optional automatic cookie refresh via a cookie file and refresh command
+- Tool-call compatibility (emulated via prompt injection)
+- Cloudflare bypass via Chrome TLS fingerprint spoofing (utls)
+- Automatic PoW (Proof-of-Work) challenge solving
+- Cookie management with optional auto-refresh
+- Optional API key auth to protect your proxy
+- Built-in browser chat UI at `/`
+- Session threading via `x-chat-session-id` / `x-parent-message-id` headers
+
+---
 
 ## Quick Start
 
-Recommended environment:
-
-- Python `3.11`
-- Bun for JavaScript dependency installation and running the proxy
-
-Python `3.14` is not recommended for this project. The backend depends on native/runtime packages such as `wasmtime`, `curl-cffi`, and `numpy`, and the PoW/WASM flow was verified working with Python `3.11`. In local testing, Python `3.14` was not reliable for this stack.
+### Option A — Pre-built binary (recommended for VPS)
 
 ```bash
-# Create and activate a Python 3.11 virtual environment
-python3.11 -m venv .venv311
-source .venv311/bin/activate
-
-# Install Python backend dependencies
-pip install -U pip setuptools wheel
-pip install fastapi uvicorn curl-cffi python-dotenv wasmtime numpy
-
-# Install Bun if needed
-curl -fsSL https://bun.sh/install | bash
-
-# Install JavaScript dependencies
-bun install
-
-# Copy environment template
+# Download or build the binary (see Build section below)
+# Copy .env and the WASM file to your server
 cp .env.example .env
-
-# Configure either:
-# - DEEPSEEK_AUTH_TOKEN from your browser session, or
-# - DEEPSEEK_EMAIL / DEEPSEEK_PASSWORD to log in directly
-#
-# Set DEEPSEEK_SAVE_LOGIN=true to save the login to login.json
-
-# Start the Python backend
-python src/backend.py
-
-# In another terminal, start the proxy
-bun run dev
+# Edit .env with your credentials (see Configuration)
+./freeseek-proxy
 ```
 
-The proxy runs on `http://localhost:9123` by default.
+### Option B — Build from source
 
-Long-running conversations are not cut off by a proxy-side timeout. The proxy waits for the backend response to finish.
+Requirements: Go 1.22+
 
-## Setup Notes and Pitfalls
+```bash
+git clone https://github.com/KTS-o7/freeseek-proxy
+cd freeseek-proxy
 
-- Use Python `3.11` for the backend. This was verified to work with the WASM-based PoW solver.
-- Do not use Python `3.14` for this project unless you have independently verified the full dependency stack on your machine.
-- If the backend process is terminated with just `killed` during chat completion, try Python `3.11` first before debugging the application logic. In local testing, the PoW/WASM path worked on `3.11`.
-- Prefer `bun install` and `bun run dev` for the JavaScript side.
-- Avoid mixing `npm install` and `bun install` in the same checkout. Mixed lockfiles and stale `node_modules` can cause native package issues such as `esbuild` platform mismatches or watch-mode failures.
-- If the proxy fails with `esbuild`/`tsx` native module errors, remove `node_modules`, keep the Bun lockfile, reinstall with Bun, and start again.
+# Build for your current OS
+go build -o freeseek-proxy ./cmd/proxy/
+
+# Cross-compile for Linux VPS (from macOS/Windows)
+GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o freeseek-proxy-linux ./cmd/proxy/
+
+cp .env.example .env
+# Edit .env with your credentials
+./freeseek-proxy
+```
+
+The proxy starts on `http://localhost:9123` by default.
+
+---
+
+## Deploy to VPS
+
+```bash
+# Build Linux binary locally
+GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o freeseek-proxy-linux ./cmd/proxy/
+
+# Copy binary + env + WASM file to server
+scp freeseek-proxy-linux user@your-vps:/opt/freeseek/freeseek-proxy
+scp .env user@your-vps:/opt/freeseek/.env
+scp -r dsk/ user@your-vps:/opt/freeseek/
+
+# SSH in and run
+ssh user@your-vps
+cd /opt/freeseek
+chmod +x freeseek-proxy
+./freeseek-proxy
+```
+
+> **Note:** The WASM binary at `dsk/wasm/sha3_wasm_bg.7b9ca65ddd.wasm` must be present alongside the binary. It is used for the PoW solver and is loaded at runtime from the working directory.
+
+To run as a background service:
+
+```bash
+nohup ./freeseek-proxy > freeseek.log 2>&1 &
+```
+
+Or create a systemd unit:
+
+```ini
+[Unit]
+Description=freeseek-proxy
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/freeseek
+ExecStart=/opt/freeseek/freeseek-proxy
+Restart=on-failure
+EnvironmentFile=/opt/freeseek/.env
+
+[Install]
+WantedBy=multi-user.target
+```
+
+---
 
 ## Configuration
 
-Edit `.env` or set environment variables:
+Copy `.env.example` to `.env` and fill in the values:
 
 ```bash
-# Use either a DeepSeek auth token...
+# DeepSeek bearer token (from your browser session)
+# Get it from: DevTools → Network → any /api/v0/chat/completion request → Authorization header
 DEEPSEEK_AUTH_TOKEN=
 
-# ...or DeepSeek account credentials
+# OR: log in with email/password (proxy fetches the token automatically)
 DEEPSEEK_EMAIL=
 DEEPSEEK_PASSWORD=
-
-# Optional: Save login credentials/session to disk
-DEEPSEEK_SAVE_LOGIN=true
+DEEPSEEK_SAVE_LOGIN=true        # save token to login.json for reuse
 DEEPSEEK_LOGIN_FILE=login.json
 
-# Optional: Browser cookies for WAF/CSRF protection
-DEEPSEEK_COOKIES=your_cookies_here
+# Browser cookies for Cloudflare/WAF bypass
+# Get from: DevTools → Application → Cookies → chat.deepseek.com
+# Include at minimum: aws-waf-token and ds_session_id
+DEEPSEEK_COOKIES=aws-waf-token=...; ds_session_id=...
 
-# Optional: Cookie refresh support
+# Optional: save/load cookies from a JSON file
 DEEPSEEK_COOKIE_FILE=cookies.json
+
+# Optional: shell command to refresh cookies when Cloudflare blocks a request
 DEEPSEEK_COOKIE_REFRESH_COMMAND=
 
-# Optional: Protect proxy with API key
-API_KEY=your_api_key
+# Optional: protect this proxy with a Bearer key
+API_KEY=
 
-# Optional: Change port (default: 9123)
+# Server port (default: 9123)
 PORT=9123
 ```
 
-Notes:
+### Getting Your DeepSeek Auth Token
 
-- Set `DEEPSEEK_AUTH_TOKEN` if you already have a browser token.
-- Or set `DEEPSEEK_EMAIL` and `DEEPSEEK_PASSWORD` to let the backend log in for you.
-- `DEEPSEEK_SAVE_LOGIN=true` stores the login response in `login.json` for reuse.
-- `DEEPSEEK_COOKIES` and the cookie refresh settings are only needed when DeepSeek or Cloudflare requires browser cookies.
+1. Open [chat.deepseek.com](https://chat.deepseek.com) and sign in
+2. Open DevTools (F12) → Network tab
+3. Send any message
+4. Find the request to `/api/v0/chat/completion`
+5. Copy the `Authorization: Bearer <TOKEN>` header value (everything after `Bearer `)
+6. Also copy the cookies from the `Cookie` header (especially `aws-waf-token` and `ds_session_id`)
 
-## Usage with opencode
+---
 
-Add as a custom provider in your `opencode.json`:
+## Available Models
 
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "provider": {
-    "deepseek": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "DeepSeek",
-      "options": {
-        "baseURL": "http://localhost:9123/v1"
-      },
-      "models": {
-        "deepseek-chat": {
-          "name": "DeepSeek Chat"
-        },
-        "deepseek-coder": {
-          "name": "DeepSeek Coder"
-        },
-        "deepseek-reasoner": {
-          "name": "DeepSeek Reasoner"
-        }
-      }
-    }
-  }
-}
-```
+| Model ID | Type | Provider |
+|----------|------|----------|
+| `deepseek-v3` | General chat | DeepSeek |
+| `deepseek-r1` | Reasoning | DeepSeek |
+| `deepseek-chat` | Alias for deepseek-v3 | DeepSeek |
+| `deepseek-coder` | Alias for deepseek-v3 | DeepSeek |
+| `deepseek-reasoner` | Alias for deepseek-r1 | DeepSeek |
+| `taalas-llama3.1-8b` | Llama 3.1 8B (free, no auth) | chatjimmy.ai |
 
-If you set an `API_KEY`, add it to the configuration:
+---
 
-```json
-{
-  "provider": {
-    "deepseek": {
-      "options": {
-        "baseURL": "http://localhost:9123/v1",
-        "apiKey": "your_api_key"
-      }
-    }
-  }
-}
-```
+## API Reference
 
-## Usage with Claude Code
+All endpoints are OpenAI-compatible.
 
-Set the `ANTHROPIC_BASE_URL` environment variable to point to this proxy:
-
-```bash
-export ANTHROPIC_BASE_URL=http://localhost:9123/v1
-export ANTHROPIC_API_KEY=your_api_key_if_set
-```
-
-Or use it with other OpenAI-compatible tools by setting:
-
-```bash
-export OPENAI_BASE_URL=http://localhost:9123/v1
-export OPENAI_API_KEY=your_api_key_if_set
-```
-
-## Running Locally
-
-The project has two processes:
-
-1. `src/backend.py` - Python backend that handles DeepSeek auth, PoW, cookies, and upstream streaming
-2. `src/index.ts` - OpenAI-compatible proxy and built-in browser UI
-
-Typical local startup:
-
-```bash
-# terminal 1
-source .venv311/bin/activate
-python src/backend.py
-
-# terminal 2
-bun run dev
-```
-
-## Programmatic Client Usage
-
-The package also exposes `AsyncDeepSeekClient` and `SyncDeepSeekClient` helpers for direct usage against the proxy. Reuse the returned `sessionId` plus the latest `responseMessageId`/`parentMessageId` to keep a conversation stateful across turns, and set `thinkingEnabled` or `searchEnabled` when you want those DeepSeek features enabled.
-
-**AsyncDeepSeekClient streaming:**
-
-```ts
-import { AsyncDeepSeekClient } from "deepseek-proxy/client";
-
-const client = new AsyncDeepSeekClient({
-  baseURL: "http://localhost:9123/v1",
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-for await (const text of client.chat("Outline a rollout plan.", {
-  thinkingEnabled: true,
-  searchEnabled: false,
-})) {
-  process.stdout.write(text);
-}
-
-console.log(client.sessionId);
-console.log(client.parentMessageId);
-```
-
-**SyncDeepSeekClient non-streaming:**
-
-```ts
-import { SyncDeepSeekClient } from "deepseek-proxy/client";
-
-const client = new SyncDeepSeekClient({
-  baseURL: "http://localhost:9123/v1",
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-const result = await client.chat("Summarize the latest deploy status.", {
-  thinkingEnabled: false,
-  searchEnabled: true,
-});
-
-console.log(result.text);
-console.log(result.responseMessageId);
-```
-
-Both clients keep the latest `sessionId` and `parentMessageId` on the instance, so follow-up calls continue the same conversation unless you call `newChat()`.
-
-## API Endpoints
-
-### GET `/health`
-
-Health check endpoint.
+### `GET /health`
 
 ```bash
 curl http://localhost:9123/health
 # {"status":"ok"}
 ```
 
-### GET `/v1/models`
-
-List available models.
+### `GET /v1/models`
 
 ```bash
 curl http://localhost:9123/v1/models
 ```
 
-Response:
-```json
-{
-  "object": "list",
-  "data": [
-    {"id": "deepseek-chat", "object": "model", "owned_by": "deepseek"},
-    {"id": "deepseek-coder", "object": "model", "owned_by": "deepseek"},
-    {"id": "deepseek-reasoner", "object": "model", "owned_by": "deepseek"}
-  ]
-}
-```
+### `POST /v1/chat/completions`
 
-### POST `/v1/chat/completions`
+Standard OpenAI chat completions. Supports all standard fields plus these DeepSeek-specific extensions:
 
-Create a chat completion. Supports both streaming and non-streaming.
-
-Optional request fields:
-
-- `thinking_enabled` - boolean toggle to enable DeepSeek thinking mode
-- `search_enabled` - boolean toggle to enable DeepSeek search mode
-- `parent_message_id` - message ID to continue a thread from a specific parent message; numeric strings are normalized automatically
-- `tools` / `tool_choice` - OpenAI-style tool metadata for proxy-side tool-call compatibility
-
-Tool compatibility notes:
-
-- Non-streaming tool calls are emulated through the proxy for `chat.deepseek.com`
-- Streaming tool calls are also synthesized by the proxy after the upstream response completes
-- This is compatibility behavior for coding agents like OpenCode; it is not native tool calling from the DeepSeek web endpoint
-
-Useful response metadata:
-
-- `x-chat-session-id` header - current DeepSeek session id
-- `x-parent-message-id` header - latest response message id for threaded follow-ups
-- `response_message_id` - included in non-streaming JSON responses and streamed chunks when available
+| Field | Type | Description |
+|-------|------|-------------|
+| `thinking_enabled` | bool | Enable DeepSeek extended thinking (R1 model) |
+| `search_enabled` | bool | Enable DeepSeek web search |
+| `parent_message_id` | string\|number | Continue a threaded conversation |
+| `sessionId` | string | Reuse an existing DeepSeek chat session |
+| `tools` | array | OpenAI-spec tool definitions (emulated via prompt injection) |
+| `tool_choice` | string\|object | Tool choice mode (`auto`, `none`, `required`, or specific function) |
 
 **Non-streaming:**
 
 ```bash
-curl -X POST http://localhost:9123/v1/chat/completions \
+curl http://localhost:9123/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "deepseek-chat",
+    "model": "deepseek-v3",
     "messages": [{"role": "user", "content": "Hello!"}],
-    "thinking_enabled": false,
-    "search_enabled": false,
-    "parent_message_id": "optional-parent-message-id"
+    "stream": false
   }'
+```
+
+```json
+{
+  "id": "chatcmpl-abc123",
+  "object": "chat.completion",
+  "created": 1748000000,
+  "model": "deepseek-v3",
+  "choices": [{
+    "index": 0,
+    "message": {"role": "assistant", "content": "Hi! How can I help?"},
+    "finish_reason": "stop",
+    "logprobs": null
+  }],
+  "usage": {"prompt_tokens": 2, "completion_tokens": 8, "total_tokens": 10}
+}
 ```
 
 **Streaming:**
 
 ```bash
-curl -X POST http://localhost:9123/v1/chat/completions \
+curl http://localhost:9123/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "deepseek-chat",
+    "model": "deepseek-v3",
     "messages": [{"role": "user", "content": "Hello!"}],
-    "stream": true,
-    "thinking_enabled": true,
-    "search_enabled": false
+    "stream": true
   }'
 ```
 
-**With authentication:**
-
-```bash
-curl -X POST http://localhost:9123/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your_api_key" \
-  -d '{
-    "model": "deepseek-chat",
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "thinking_enabled": false,
-    "search_enabled": true
-  }'
+```
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant"},...}]}
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","choices":[{"delta":{"content":"Hi"},...}]}
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","choices":[{"delta":{},"finish_reason":"stop",...}]}
+data: [DONE]
 ```
 
-### GET `/`
+**Response headers:**
 
-Built-in chat UI for testing the API directly in your browser. The page includes simple controls for `thinking_enabled`, `search_enabled`, and an optional `parent_message_id`, and it keeps the latest session and parent message IDs for follow-up turns.
+| Header | Description |
+|--------|-------------|
+| `x-chat-session-id` | DeepSeek session ID — pass as `sessionId` in next request to continue the conversation |
+| `x-parent-message-id` | Latest message ID — pass as `parent_message_id` in next request for threaded replies |
 
-## Authentication Modes
+### `GET /`
 
-- `DEEPSEEK_AUTH_TOKEN` - use an existing browser token directly
-- `DEEPSEEK_EMAIL` + `DEEPSEEK_PASSWORD` - log in through the backend and optionally persist the login response
-- `API_KEY` - optional auth layer for clients calling your local proxy
+Built-in browser chat UI for testing. Supports thinking mode, search, and conversation threading.
 
-## Available Models
+---
 
-| Model ID | Description |
-|----------|-------------|
-| `deepseek-chat` | General-purpose chat model |
-| `deepseek-coder` | Code-focused model |
-| `deepseek-reasoner` | Reasoning model |
+## Usage with opencode
 
-## Getting Your DeepSeek Auth Token
+The repo includes an `opencode.json` that configures opencode to use this proxy. It works out of the box if the proxy is running on port 9123:
 
-1. Open [chat.deepseek.com](https://chat.deepseek.com) in your browser
-2. Sign in to your account
-3. Open Developer Tools (F12) → Network tab
-4. Send a message in the chat
-5. Find a request to `/api/v0/chat/completion`
-6. Copy the `Authorization` header value (without "Bearer ")
-7. Also copy cookies if needed for WAF protection
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "My-deepseek": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "My-deepseek",
+      "options": {
+        "baseURL": "http://localhost:9123/v1",
+        "apiKey": "sk-local"
+      },
+      "models": {
+        "deepseek-v3": {"name": "DeepSeek V3"},
+        "deepseek-r1": {"name": "DeepSeek R1"},
+        "taalas-llama3.1-8b": {"name": "Llama 3.1 8B (free)"}
+      }
+    }
+  }
+}
+```
 
-If your cookies are short-lived, you can optionally manage them outside the proxy with:
+If you set `API_KEY` in `.env`, update `apiKey` in `opencode.json` to match.
 
-- `DEEPSEEK_COOKIE_FILE` pointing to a JSON cookie file such as `cookies.json`
-- `DEEPSEEK_COOKIE_REFRESH_COMMAND` set to a command that refreshes that file automatically
-
-This gives you an automatic cookie refresh path without changing client requests.
-
-## Development
+## Usage with other OpenAI-compatible clients
 
 ```bash
-# Development mode with hot reload
-bun run dev
-
-# Python backend
-source .venv311/bin/activate
-python src/backend.py
-
-# Production mode
-bun run start
-
-# Type checking
-bun run typecheck
+export OPENAI_BASE_URL=http://localhost:9123/v1
+export OPENAI_API_KEY=your_api_key_if_set   # leave blank if API_KEY not set
 ```
+
+Works with: Claude Code, Cursor, Aider, LangChain, LlamaIndex, Continue, and any tool that supports a custom OpenAI base URL.
+
+---
 
 ## Architecture
 
-The proxy translates OpenAI API requests to DeepSeek's internal API format:
+```
+Client (opencode / curl / any OpenAI-compatible tool)
+        │
+        │  POST /v1/chat/completions  (OpenAI spec)
+        ▼
+┌─────────────────────────────────────────────────────┐
+│  freeseek-proxy  (single Go binary, port 9123)      │
+│                                                     │
+│  cmd/proxy/          HTTP router (chi)              │
+│  internal/config/    env loading                    │
+│  internal/auth/      bearer token + login           │
+│  internal/cookies/   cookie load/save/refresh       │
+│  internal/client/    utls Chrome-120 HTTP client    │
+│  internal/pow/       WASM PoW solver                │
+│  internal/proxy/     DeepSeek SSE parser            │
+│  internal/tools/     tool-call emulation            │
+│  internal/taalas/    chatjimmy.ai proxy             │
+└──────────┬──────────────────────────────────────────┘
+           │  HTTPS (Chrome TLS fingerprint)
+           ▼
+    chat.deepseek.com/api/v0/   (DeepSeek)
+    chatjimmy.ai/api/chat        (Taalas)
+```
 
-1. Receives OpenAI-format requests at `/v1/chat/completions`
-2. Creates or reuses a chat session
-3. Translates to DeepSeek's API format
-4. Forwards request to DeepSeek
-5. Translates response back to OpenAI format
-6. Returns to client
+**Key implementation details:**
 
-The proxy handles:
-- SSE stream parsing and reformatting
-- Session management
-- Token estimation for usage reporting
-- Error translation
+- **Cloudflare bypass:** Uses [`utls`](https://github.com/refraction-networking/utls) to spoof the Chrome 120 TLS ClientHello fingerprint, same strategy as the Python `curl-cffi` backend it replaces
+- **PoW solver:** Loads DeepSeek's own SHA-3 WASM binary via [wazero](https://github.com/tetratelabs/wazero) — no Python/wasmtime needed
+- **Tool calls:** Emulated via prompt injection (DeepSeek's web endpoint doesn't support native tool calling). The model is instructed to emit JSON envelopes which the proxy parses and converts to OpenAI-spec `tool_calls`
+- **HTML UI:** Embedded directly in the binary via `go:embed`
+
+---
+
+## Building
+
+```bash
+# macOS/Linux
+go build -o freeseek-proxy ./cmd/proxy/
+
+# Linux (from any OS)
+GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o freeseek-proxy-linux ./cmd/proxy/
+
+# Windows
+GOOS=windows GOARCH=amd64 go build -o freeseek-proxy.exe ./cmd/proxy/
+
+# Run tests
+go test ./...
+```
+
+Binary sizes (approx):
+- macOS arm64: ~16MB
+- Linux amd64 (stripped): ~12MB
+
+Memory usage at runtime: ~20-50MB
+
+---
+
+## Legacy Stack (TypeScript + Python)
+
+The original two-process stack (`src/index.ts` + `src/backend.py`) is still present in the repository for reference but is no longer the recommended way to run the proxy. The Go binary replaces both processes with equivalent functionality.
+
+If you need the legacy stack:
+
+```bash
+# Python 3.11 backend
+python3.11 -m venv .venv311
+source .venv311/bin/activate
+pip install fastapi uvicorn "curl-cffi==0.7.4" python-dotenv wasmtime numpy
+python src/backend.py
+
+# TypeScript proxy (separate terminal)
+bun install
+bun run dev
+```

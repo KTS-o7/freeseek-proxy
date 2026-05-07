@@ -16,6 +16,9 @@
         },
         "deepseek-reasoner": {
           "name": "DeepSeek Reasoner"
+        },
+        "taalas-llama3.1-8b": {
+          "name": "Taalas Llama 3.1 8B"
         }
       }
     }

@@ -52,10 +52,10 @@ def build_headers() -> dict[str, str]:
         "origin": "https://chat.deepseek.com",
         "referer": "https://chat.deepseek.com/",
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
-        "x-app-version": "20241129.1",
+        "x-app-version": "2.0.0",
         "x-client-locale": "en_US",
         "x-client-platform": "web",
-        "x-client-version": "1.0.0-always",
+        "x-client-version": "2.0.0",
     }
 
 
@@ -139,11 +139,31 @@ def get_pow_header(headers: dict[str, str]) -> str:
     return pow_solver.solve_challenge(challenge)
 
 
+MODEL_TYPE_MAP = {
+    "deepseek-reasoner": "expert",
+    "deepseek-chat": "default",
+    "deepseek-coder": "default",
+}
+
+
+def resolve_model_type(model: str) -> str:
+    """Map an OpenAI-style model name to DeepSeek's model_type field."""
+    return MODEL_TYPE_MAP.get(model, "default")
+
+
 def create_completion_response(body: dict, stream: bool):
     headers = build_headers()
     pow_header = get_pow_header(headers)
     request_headers = {**headers, "x-ds-pow-response": pow_header}
-    return deepseek_post("/chat/completion", request_headers, body, stream=stream)
+
+    # Derive model_type from the OpenAI-style model name, then strip the
+    # model field so it is never forwarded to DeepSeek's API.
+    model_type = resolve_model_type(body.get("model", ""))
+    ds_body = {k: v for k, v in body.items() if k != "model"}
+    if "model_type" not in ds_body:
+        ds_body["model_type"] = model_type
+
+    return deepseek_post("/chat/completion", request_headers, ds_body, stream=stream)
 
 
 def parse_stream_chunk(chunk: bytes):
@@ -252,6 +272,104 @@ async def chat_completion_sync(request: Request):
     return {"text": full_text}
 
 
+# ---------------------------------------------------------------------------
+# Taalas (chatjimmy.ai) provider
+# No auth, no PoW, no cookies — plain HTTP proxy.
+# ---------------------------------------------------------------------------
+
+TAALAS_BASE_URL = "https://chatjimmy.ai/api"
+TAALAS_STATS_DELIMITER_START = "<|stats|>"
+TAALAS_STATS_DELIMITER_END = "<|/stats|>"
+
+
+def _build_taalas_headers() -> dict[str, str]:
+    return {
+        "accept": "*/*",
+        "accept-language": "en-US,en;q=0.9",
+        "content-type": "application/json",
+        "origin": "https://chatjimmy.ai",
+        "referer": "https://chatjimmy.ai/",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+    }
+
+
+def _parse_taalas_response(raw: str) -> tuple[str, dict]:
+    """Split the Taalas response into (text, stats_dict).
+
+    The wire format is: <text><|stats|>{...json...}<|/stats|>
+    """
+    stats_start = raw.find(TAALAS_STATS_DELIMITER_START)
+    if stats_start == -1:
+        return raw.strip(), {}
+
+    text = raw[:stats_start].strip()
+    stats_raw = raw[stats_start + len(TAALAS_STATS_DELIMITER_START):]
+    stats_end = stats_raw.find(TAALAS_STATS_DELIMITER_END)
+    stats_str = stats_raw[:stats_end] if stats_end != -1 else stats_raw
+    try:
+        stats = json.loads(stats_str)
+    except Exception:
+        stats = {}
+    return text, stats
+
+
+@app.post("/taalas/completion")
+async def taalas_completion(request: Request):
+    """Proxy a chat request to chatjimmy.ai and return the text as a plain SSE stream."""
+    body = await request.json()
+    messages: list[dict] = body.get("messages", [])
+    model: str = body.get("model", "llama3.1-8B")
+    system_prompt: str = body.get("system_prompt", "")
+    top_k: int = body.get("topK", 8)
+
+    # chatjimmy.ai only takes the last user message as the prompt;
+    # for multi-turn, concatenate all messages into the prompt field.
+    if len(messages) == 1:
+        prompt = messages[0].get("content", "")
+    else:
+        prompt = "\n".join(
+            f"{m.get('role', 'user').capitalize()}: {m.get('content', '')}"
+            for m in messages
+        )
+
+    payload = {
+        "messages": [{"role": "user", "content": prompt}],
+        "chatOptions": {
+            "selectedModel": model,
+            "systemPrompt": system_prompt,
+            "topK": top_k,
+        },
+        "attachment": None,
+    }
+
+    try:
+        response = requests.post(  # type: ignore[call-arg]
+            f"{TAALAS_BASE_URL}/chat",
+            headers=_build_taalas_headers(),
+            json=payload,
+            impersonate="chrome120",
+        )
+    except Exception as exc:
+        raise NetworkError(f"Taalas network request failed: {exc}") from exc
+
+    if response.status_code != 200:
+        raise APIError(
+            f"Taalas API returned HTTP {response.status_code}",
+            status_code=response.status_code,
+        )
+
+    text, _stats = _parse_taalas_response(response.text)
+
+    # Emit as a single SSE data line so the TypeScript layer can process it
+    # identically to DeepSeek's streaming format.
+    def generate():
+        chunk = json.dumps({"content": text})
+        yield f"data: {chunk}\n\n".encode("utf-8")
+        yield b"data: [DONE]\n\n"
+
+    return StreamingResponse(generate(), media_type="text/plain")
+
+
 if __name__ == "__main__":
-    print("DeepSeek backend running on http://localhost:8081")
+    print("DeepSeek + Taalas backend running on http://localhost:8081")
     uvicorn.run(app, host="127.0.0.1", port=8081)

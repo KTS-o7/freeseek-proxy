@@ -79,9 +79,14 @@ app.get("/v1/models", (c) =>
   c.json({
     object: "list",
     data: [
+      // Current DeepSeek models
+      { id: "deepseek-v3",        object: "model", created: 1704067200, owned_by: "deepseek" },
+      { id: "deepseek-r1",        object: "model", created: 1704067200, owned_by: "deepseek" },
+      // Legacy aliases (map to the same model_type on the backend)
       { id: "deepseek-chat",      object: "model", created: 1704067200, owned_by: "deepseek" },
       { id: "deepseek-coder",     object: "model", created: 1704067200, owned_by: "deepseek" },
       { id: "deepseek-reasoner",  object: "model", created: 1704067200, owned_by: "deepseek" },
+      // Taalas
       { id: "taalas-llama3.1-8b", object: "model", created: 1704067200, owned_by: "taalas"   },
     ],
   })
@@ -524,7 +529,7 @@ async function handleChatCompletion(c: Context, body: ChatCompletionBody) {
     return c.json(makeErrorBody("messages is required", "invalid_request_error", null, "messages"), 400);
   }
 
-  const model = body.model || "deepseek-chat";
+  const model = body.model || "deepseek-v3";
   const tools = body.tools ?? [];
   const normalizedToolChoice = normalizeToolChoice(body.tool_choice);
   const toolCompatibilityMode = hasToolCompatibilityRequest(body.messages, tools, body.tool_choice);

@@ -140,9 +140,13 @@ def get_pow_header(headers: dict[str, str]) -> str:
 
 
 MODEL_TYPE_MAP = {
-    "deepseek-reasoner": "expert",
+    # Current model names
+    "deepseek-v3": "default",
+    "deepseek-r1": "expert",
+    # Legacy aliases kept for backward compatibility
     "deepseek-chat": "default",
     "deepseek-coder": "default",
+    "deepseek-reasoner": "expert",
 }
 
 
@@ -225,7 +229,15 @@ async def create_session():
         {"character_id": None},
     )
     try:
-        session_id = response.json()["data"]["biz_data"]["id"]
+        biz_data = response.json()["data"]["biz_data"]
+        # API v2 nests the session under a "chat_session" key;
+        # fall back to the flat "id" for older response shapes.
+        session_id = (
+            biz_data.get("chat_session", {}).get("id")
+            or biz_data.get("id")
+        )
+        if not session_id:
+            raise KeyError("session id not found in biz_data")
     except Exception as exc:
         raise APIError("DeepSeek session response was invalid") from exc
     return {"session_id": session_id}

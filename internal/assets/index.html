@@ -108,6 +108,11 @@
       .meta { display: flex; gap: 12px; margin-top: 4px; font-size: 12px; color: var(--muted); }
       .meta button { border: 0; background: none; padding: 0; color: var(--muted); }
       .meta button:hover { color: var(--ink); }
+      .think { margin: 0 0 10px; border-left: 2px solid var(--line-strong); padding-left: 12px; color: var(--soft); font-size: 14.5px; }
+      .think summary { cursor: pointer; color: var(--muted); font-size: 13px; list-style: none; }
+      .think summary::before { content: "▸ "; }
+      .think[open] summary::before { content: "▾ "; }
+      .think .md { margin-top: 6px; }
       .cursor::after { content: "▍"; color: var(--accent); animation: blink 1s steps(2) infinite; }
       @keyframes blink { 50% { opacity: 0; } }
 
@@ -195,7 +200,7 @@
       const thinking = $("#thinking"), search = $("#search");
       const ICON_SEND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
       const ICON_STOP = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
-      const LABELS = { "deepseek-chat": "DeepSeek", "deepseek-expert": "DeepSeek Expert", "taalas-llama3.1-8b": "Llama 3.1 8B" };
+      const LABELS = { "deepseek-chat": "DeepSeek", "deepseek-reasoner": "DeepSeek (thinking)", "taalas-llama3.1-8b": "Llama 3.1 8B" };
       const store = {
         get: (k, d) => { try { const v = localStorage.getItem("fs." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
         set: (k, v) => localStorage.setItem("fs." + k, JSON.stringify(v)),
@@ -212,7 +217,7 @@
         s = esc(s)
           .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
           .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-          .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+          .replace(/(^|[^*\w])\*(?=\S)([^*\n]*?\S)\*(?![\w*])/g, "$1<em>$2</em>");
         return s.replace(/\u0000(\d+)\u0000/g, (_, i) => "<code>" + esc(codes[+i]) + "</code>");
       }
       function markdown(src) {
@@ -267,14 +272,23 @@
           transcript.innerHTML = '<div class="empty"><h1>What would you like to do?</h1><p>Ask anything. Replies stream in as they are written.</p></div>';
           return;
         }
-        history.forEach((m, i) => transcript.appendChild(messageNode(m.role, m.content, i)));
+        history.forEach((m, i) => transcript.appendChild(messageNode(m.role, m.content, i, m.reasoning)));
       }
-      function messageNode(role, content, index) {
+      function thinkNode(text, open) {
+        const d = document.createElement("details");
+        d.className = "think";
+        d.open = open;
+        d.innerHTML = '<summary>Thinking</summary><div class="md"></div>';
+        d.lastChild.innerHTML = markdown(text);
+        return d;
+      }
+      function messageNode(role, content, index, reasoning) {
         const wrap = document.createElement("div");
         wrap.className = "msg " + role;
         const body = document.createElement("div");
         body.className = "body" + (role === "assistant" ? " md" : "");
         if (role === "assistant") body.innerHTML = markdown(content); else body.textContent = content;
+        if (reasoning) wrap.appendChild(thinkNode(reasoning, false));
         wrap.appendChild(body);
         if (role === "assistant" && index !== undefined) wrap.appendChild(metaNode(content));
         return wrap;
@@ -302,7 +316,7 @@
 
       // ---------- models and settings ----------
       async function loadModels() {
-        let ids = ["deepseek-chat", "deepseek-expert", "taalas-llama3.1-8b"];
+        let ids = ["deepseek-chat", "deepseek-reasoner", "taalas-llama3.1-8b"];
         try {
           const r = await fetch("/v1/models");
           if (r.ok) ids = (await r.json()).data.map((m) => m.id);
@@ -314,7 +328,7 @@
       }
       function syncToggles() {
         const ds = modelSel.value.startsWith("deepseek");
-        $("#thinking-wrap").hidden = !ds;
+        $("#thinking-wrap").hidden = !ds || modelSel.value === "deepseek-reasoner";
         $("#search-wrap").hidden = !ds;
       }
       modelSel.onchange = () => { store.set("model", modelSel.value); syncToggles(); };
@@ -368,7 +382,7 @@
 
         controller = new AbortController();
         setBusy(true);
-        let reply = "";
+        let reply = "", reasoning = "", think = null;
         try {
           const headers = { "Content-Type": "application/json" };
           const key = keyInput.value.trim();
@@ -381,7 +395,7 @@
             body: JSON.stringify({
               model: modelSel.value,
               stream: true,
-              messages: history,
+              messages: history.map((m) => ({ role: m.role, content: m.content })),
               thinking_enabled: ds && thinking.checked,
               search_enabled: ds && search.checked,
             }),
@@ -406,12 +420,20 @@
               const data = line.slice(5).trim();
               if (!data || data === "[DONE]") continue;
               try {
-                const delta = JSON.parse(data).choices?.[0]?.delta?.content;
-                if (delta) { reply += delta; changed = true; }
+                const d = JSON.parse(data).choices?.[0]?.delta || {};
+                if (d.reasoning_content) {
+                  reasoning += d.reasoning_content; changed = true;
+                  if (!think) { think = thinkNode("", true); node.insertBefore(think, body); }
+                }
+                if (d.content) { reply += d.content; changed = true; }
               } catch {}
             }
             if (changed) {
               const stick = nearBottom();
+              if (think) {
+                think.lastChild.innerHTML = markdown(reasoning);
+                if (reply && think.open && !think.dataset.closed) { think.open = false; think.dataset.closed = "1"; }
+              }
               body.innerHTML = markdown(reply);
               if (stick) node.scrollIntoView({ block: "end" });
             }
@@ -425,7 +447,7 @@
         } finally {
           body.classList.remove("cursor");
           if (reply) {
-            history.push({ role: "assistant", content: reply });
+            history.push(reasoning ? { role: "assistant", content: reply, reasoning } : { role: "assistant", content: reply });
             store.set("history", history);
             body.innerHTML = markdown(reply);
             node.appendChild(metaNode(reply));

@@ -17,15 +17,18 @@ import (
 	"github.com/KTS-o7/freeseek-proxy/internal/tools"
 )
 
-// modelTypeMap maps model names to chat.deepseek.com modes. The website decides which
-// model version each mode runs; the older names stay as aliases for existing clients.
-var modelTypeMap = map[string]string{
-	"deepseek-chat":     "default",
-	"deepseek-expert":   "expert",
-	"deepseek-v3":       "default",
-	"deepseek-coder":    "default",
-	"deepseek-r1":       "expert",
-	"deepseek-reasoner": "expert",
+// deepseekModels maps model names to "thinking always on". chat.deepseek.com decides
+// which model version answers; its API accepts only model_type "default" (tested
+// November 2026: "expert", "reasoner", "pro" and others all come back as "default").
+// So the real choice is thinking on or off, named like DeepSeek's official API.
+var deepseekModels = map[string]bool{
+	"deepseek-chat":     false,
+	"deepseek-reasoner": true,
+	// aliases kept for existing clients
+	"deepseek-v3":     false,
+	"deepseek-coder":  false,
+	"deepseek-r1":     true,
+	"deepseek-expert": true,
 }
 
 type chatRequest struct {
@@ -65,10 +68,12 @@ func handleChatCompletions(c *client.Client, keepSessions bool) http.HandlerFunc
 }
 
 func handleDeepSeek(w http.ResponseWriter, r *http.Request, req chatRequest, model string, c *client.Client, keepSessions bool) {
-	if _, ok := modelTypeMap[model]; !ok {
-		proxyerr.WriteJSON(w, proxyerr.Invalid(fmt.Sprintf("unknown model %q; use deepseek-chat, deepseek-expert or taalas-llama3.1-8b", model)))
+	alwaysThink, ok := deepseekModels[model]
+	if !ok {
+		proxyerr.WriteJSON(w, proxyerr.Invalid(fmt.Sprintf("unknown model %q; use deepseek-chat, deepseek-reasoner or taalas-llama3.1-8b", model)))
 		return
 	}
+	thinking := req.ThinkingEnabled || alwaysThink
 	// A request without sessionId is stateless: the proxy opens a DeepSeek chat for it,
 	// sends the whole conversation as one prompt, and deletes the chat afterwards
 	// (unless DEEPSEEK_KEEP_SESSIONS is on) so the DeepSeek account does not fill up.
@@ -113,15 +118,13 @@ func handleDeepSeek(w http.ResponseWriter, r *http.Request, req chatRequest, mod
 
 	promptText := messagesText(req.Messages)
 
-	modelType := modelTypeMap[model]
-
 	body := map[string]interface{}{
 		"chat_session_id":   sessionID,
 		"parent_message_id": normalizeParentID(req.ParentMessageID),
-		"model_type":        modelType,
+		"model_type":        "default",
 		"prompt":            prompt,
 		"ref_file_ids":      []interface{}{},
-		"thinking_enabled":  req.ThinkingEnabled,
+		"thinking_enabled":  thinking,
 		"search_enabled":    req.SearchEnabled,
 		"preempt":           false,
 	}
@@ -138,7 +141,7 @@ func handleDeepSeek(w http.ResponseWriter, r *http.Request, req chatRequest, mod
 	defer resp.Body.Close()
 
 	if toolsProvided || !req.Stream {
-		fullText, msgID := proxy.CollectFull(resp.Body, req.ThinkingEnabled)
+		fullText, reasoning, msgID := proxy.CollectFull(resp.Body, thinking)
 		parsed := tools.ParseEnvelope(fullText, req.Tools)
 
 		if req.Stream {
@@ -147,13 +150,13 @@ func handleDeepSeek(w http.ResponseWriter, r *http.Request, req chatRequest, mod
 			if parsed != nil {
 				writeToolCallResponse(w, model, visibleSession, msgID, parsed, promptText, fullText)
 			} else {
-				proxy.WriteNonStreaming(w, model, promptText, fullText, msgID, visibleSession)
+				proxy.WriteNonStreaming(w, model, promptText, fullText, reasoning, msgID, visibleSession)
 			}
 		}
 		return
 	}
 
-	streamDeepSeek(w, resp, model, visibleSession, req.ThinkingEnabled)
+	streamDeepSeek(w, resp, model, visibleSession, thinking)
 }
 
 func createSession(ctx context.Context, c *client.Client) (string, error) {
@@ -198,11 +201,16 @@ func streamDeepSeek(w http.ResponseWriter, resp *http.Response, model, sessionID
 	proxy.SetStreamHeaders(w, sessionID, nil)
 	proxy.StreamChunk(w, flusher, proxy.RoleChunk(id, created, model))
 
+	parser := proxy.NewParser(thinking)
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 	for scanner.Scan() {
-		evt := proxy.ParseLine(scanner.Text(), thinking)
+		evt := parser.Line(scanner.Text())
 		if evt == nil {
 			continue
+		}
+		if evt.Reasoning != "" {
+			proxy.StreamChunk(w, flusher, proxy.ReasoningChunk(id, created, model, evt.Reasoning))
 		}
 		if evt.Content != "" {
 			proxy.StreamChunk(w, flusher, proxy.ContentChunk(id, created, model, evt.Content))

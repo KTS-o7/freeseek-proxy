@@ -10,7 +10,7 @@ An OpenAI-compatible API proxy for [DeepSeek](https://chat.deepseek.com) and [Ta
 
 - **Single Go binary** — ~12MB, ~20-50MB RAM, no runtime needed
 - **OpenAI-compatible API** — drop-in replacement for `api.openai.com`
-- **DeepSeek models** — `deepseek-chat` and `deepseek-expert`, the two modes of chat.deepseek.com (it picks the model version)
+- **DeepSeek models** — `deepseek-chat` and `deepseek-reasoner` (thinking on, returned as `reasoning_content`). chat.deepseek.com picks the model version
 - **Taalas (chatjimmy.ai)** — free Llama 3.1 8B model, no auth required
 - Streaming and non-streaming responses
 - Tool-call compatibility (emulated via prompt injection)
@@ -159,10 +159,10 @@ A token stops working after a while. When DeepSeek rejects it, requests fail wit
 
 | Model ID | Type | Provider |
 |----------|------|----------|
-| `deepseek-chat` | chat.deepseek.com default mode | DeepSeek |
-| `deepseek-expert` | chat.deepseek.com expert mode | DeepSeek |
+| `deepseek-chat` | DeepSeek, thinking off (turn on with `thinking_enabled`) | DeepSeek |
+| `deepseek-reasoner` | DeepSeek with thinking always on | DeepSeek |
 
-chat.deepseek.com decides which model version each mode runs, so these names do not pin a version. The old names still work: `deepseek-v3` and `deepseek-coder` map to `deepseek-chat`; `deepseek-r1` and `deepseek-reasoner` map to `deepseek-expert`.
+chat.deepseek.com decides which model version answers; these names do not pin a version. Its API accepts only one `model_type` ("default"); in November 2026 "expert" and other values all came back as "default". The thinking text comes back in `reasoning_content` (streamed as `delta.reasoning_content`), separate from the answer. The old names still work: `deepseek-v3` and `deepseek-coder` map to `deepseek-chat`; `deepseek-r1` and `deepseek-expert` map to `deepseek-reasoner`.
 | `taalas-llama3.1-8b` | Llama 3.1 8B (free, no auth) | chatjimmy.ai |
 
 ---
@@ -190,7 +190,7 @@ Standard OpenAI chat completions. Supports all standard fields plus these DeepSe
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `thinking_enabled` | bool | Enable DeepSeek thinking (the reasoning text is included in the reply) |
+| `thinking_enabled` | bool | Turn on DeepSeek thinking for `deepseek-chat`. The reasoning comes back in `reasoning_content` |
 | `search_enabled` | bool | Enable DeepSeek web search |
 | `sessionId` | string | Advanced: continue an existing DeepSeek chat instead of sending the full history. Needs `DEEPSEEK_KEEP_SESSIONS=true` |
 | `parent_message_id` | string\|number | With `sessionId`: the message to reply to |
@@ -274,7 +274,7 @@ The repo includes an `opencode.json` that configures opencode to use this proxy.
       },
       "models": {
         "deepseek-chat": {"name": "DeepSeek (default)"},
-        "deepseek-expert": {"name": "DeepSeek (expert)"},
+        "deepseek-reasoner": {"name": "DeepSeek (thinking)"},
         "taalas-llama3.1-8b": {"name": "Llama 3.1 8B (free)"}
       }
     }

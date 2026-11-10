@@ -15,10 +15,10 @@ func handleModels(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]interface{}{
 		"object": "list",
 		"data": []model{
-			// chat.deepseek.com picks the model version; these name its two modes.
-			// Old names (deepseek-v3, -r1, -coder, -reasoner) still work as aliases.
+			// chat.deepseek.com picks the model version. deepseek-reasoner turns thinking on.
+			// Old names (deepseek-v3, -coder, -r1, -expert) still work as aliases.
 			{ID: "deepseek-chat", Object: "model", Created: 1704067200, OwnedBy: "deepseek"},
-			{ID: "deepseek-expert", Object: "model", Created: 1704067200, OwnedBy: "deepseek"},
+			{ID: "deepseek-reasoner", Object: "model", Created: 1704067200, OwnedBy: "deepseek"},
 			{ID: "taalas-llama3.1-8b", Object: "model", Created: 1704067200, OwnedBy: "taalas"},
 		},
 	}

@@ -23,7 +23,7 @@ func buildUsage(promptText, completionText string) map[string]int {
 }
 
 // WriteNonStreaming writes a complete chat.completion JSON response.
-func WriteNonStreaming(w http.ResponseWriter, model, promptText, fullText string, msgID interface{}, sessionID string) {
+func WriteNonStreaming(w http.ResponseWriter, model, promptText, fullText, reasoning string, msgID interface{}, sessionID string) {
 	id := ChatCmplID()
 	created := time.Now().Unix()
 	body := map[string]interface{}{
@@ -34,7 +34,7 @@ func WriteNonStreaming(w http.ResponseWriter, model, promptText, fullText string
 		"choices": []map[string]interface{}{
 			{
 				"index":         0,
-				"message":       map[string]interface{}{"role": "assistant", "content": fullText},
+				"message":       assistantMessage(fullText, reasoning),
 				"finish_reason": "stop",
 				"logprobs":      nil,
 			},
@@ -95,6 +95,24 @@ func ContentChunk(id string, created int64, model, content string) map[string]in
 			{"index": 0, "delta": map[string]interface{}{"content": content}, "finish_reason": nil, "logprobs": nil},
 		},
 	}
+}
+
+// ReasoningChunk emits a reasoning_content delta chunk (DeepSeek's thinking text).
+func ReasoningChunk(id string, created int64, model, reasoning string) map[string]interface{} {
+	return map[string]interface{}{
+		"id": id, "object": "chat.completion.chunk", "created": created, "model": model,
+		"choices": []map[string]interface{}{
+			{"index": 0, "delta": map[string]interface{}{"reasoning_content": reasoning}, "finish_reason": nil, "logprobs": nil},
+		},
+	}
+}
+
+func assistantMessage(content, reasoning string) map[string]interface{} {
+	m := map[string]interface{}{"role": "assistant", "content": content}
+	if reasoning != "" {
+		m["reasoning_content"] = reasoning
+	}
+	return m
 }
 
 // StopChunk emits the finish_reason=stop chunk.

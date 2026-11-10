@@ -10,7 +10,7 @@ An OpenAI-compatible API proxy for [DeepSeek](https://chat.deepseek.com) and [Ta
 
 - **Single Go binary** — ~12MB, ~20-50MB RAM, no runtime needed
 - **OpenAI-compatible API** — drop-in replacement for `api.openai.com`
-- **DeepSeek models** — `deepseek-v3`, `deepseek-r1` (and legacy aliases)
+- **DeepSeek models** — `deepseek-chat` and `deepseek-expert`, the two modes of chat.deepseek.com (it picks the model version)
 - **Taalas (chatjimmy.ai)** — free Llama 3.1 8B model, no auth required
 - Streaming and non-streaming responses
 - Tool-call compatibility (emulated via prompt injection)
@@ -19,7 +19,9 @@ An OpenAI-compatible API proxy for [DeepSeek](https://chat.deepseek.com) and [Ta
 - Cookie management with optional auto-refresh
 - Optional API key auth to protect your proxy
 - Built-in browser chat UI at `/`
-- Session threading via `x-chat-session-id` / `x-parent-message-id` headers
+- Full conversation context: each request sends the whole message list, including system messages
+- Cleans up after itself: chats it opens in your DeepSeek account are deleted after the reply
+- Recovers from an expired token by moving to the next token source (saved login, then email + password)
 
 ---
 
@@ -132,18 +134,24 @@ DEEPSEEK_COOKIE_REFRESH_COMMAND=
 # Optional: protect this proxy with a Bearer key
 API_KEY=
 
+# Address to listen on (default: 127.0.0.1; put nginx in front for public access)
+HOST=127.0.0.1
+
 # Server port (default: 9123)
 PORT=9123
+
+# Keep the DeepSeek chats the proxy creates (default: false, they are deleted after each reply)
+DEEPSEEK_KEEP_SESSIONS=false
 ```
 
 ### Getting Your DeepSeek Auth Token
 
 1. Open [chat.deepseek.com](https://chat.deepseek.com) and sign in
-2. Open DevTools (F12) → Network tab
-3. Send any message
-4. Find the request to `/api/v0/chat/completion`
-5. Copy the `Authorization: Bearer <TOKEN>` header value (everything after `Bearer `)
-6. Also copy the cookies from the `Cookie` header (especially `aws-waf-token` and `ds_session_id`)
+2. Open DevTools (F12) → Console and run `copy(localStorage.getItem('userToken'))`
+3. The clipboard now holds `{"value":"<TOKEN>",...}`. Put `<TOKEN>` in `DEEPSEEK_AUTH_TOKEN`
+4. Optional: copy the `aws-waf-token` and `ds_session_id` cookies (Application → Cookies) into `DEEPSEEK_COOKIES`
+
+A token stops working after a while. When DeepSeek rejects it, requests fail with HTTP 503 and a message that says so. Set `DEEPSEEK_EMAIL` and `DEEPSEEK_PASSWORD` if you want the proxy to log in again by itself (this does not work for accounts that sign in with Google).
 
 ---
 
@@ -151,11 +159,10 @@ PORT=9123
 
 | Model ID | Type | Provider |
 |----------|------|----------|
-| `deepseek-v3` | General chat | DeepSeek |
-| `deepseek-r1` | Reasoning | DeepSeek |
-| `deepseek-chat` | Alias for deepseek-v3 | DeepSeek |
-| `deepseek-coder` | Alias for deepseek-v3 | DeepSeek |
-| `deepseek-reasoner` | Alias for deepseek-r1 | DeepSeek |
+| `deepseek-chat` | chat.deepseek.com default mode | DeepSeek |
+| `deepseek-expert` | chat.deepseek.com expert mode | DeepSeek |
+
+chat.deepseek.com decides which model version each mode runs, so these names do not pin a version. The old names still work: `deepseek-v3` and `deepseek-coder` map to `deepseek-chat`; `deepseek-r1` and `deepseek-reasoner` map to `deepseek-expert`.
 | `taalas-llama3.1-8b` | Llama 3.1 8B (free, no auth) | chatjimmy.ai |
 
 ---
@@ -183,10 +190,10 @@ Standard OpenAI chat completions. Supports all standard fields plus these DeepSe
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `thinking_enabled` | bool | Enable DeepSeek extended thinking (R1 model) |
+| `thinking_enabled` | bool | Enable DeepSeek thinking (the reasoning text is included in the reply) |
 | `search_enabled` | bool | Enable DeepSeek web search |
-| `parent_message_id` | string\|number | Continue a threaded conversation |
-| `sessionId` | string | Reuse an existing DeepSeek chat session |
+| `sessionId` | string | Advanced: continue an existing DeepSeek chat instead of sending the full history. Needs `DEEPSEEK_KEEP_SESSIONS=true` |
+| `parent_message_id` | string\|number | With `sessionId`: the message to reply to |
 | `tools` | array | OpenAI-spec tool definitions (emulated via prompt injection) |
 | `tool_choice` | string\|object | Tool choice mode (`auto`, `none`, `required`, or specific function) |
 
@@ -196,7 +203,7 @@ Standard OpenAI chat completions. Supports all standard fields plus these DeepSe
 curl http://localhost:9123/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "deepseek-v3",
+    "model": "deepseek-chat",
     "messages": [{"role": "user", "content": "Hello!"}],
     "stream": false
   }'
@@ -207,7 +214,7 @@ curl http://localhost:9123/v1/chat/completions \
   "id": "chatcmpl-abc123",
   "object": "chat.completion",
   "created": 1748000000,
-  "model": "deepseek-v3",
+  "model": "deepseek-chat",
   "choices": [{
     "index": 0,
     "message": {"role": "assistant", "content": "Hi! How can I help?"},
@@ -224,7 +231,7 @@ curl http://localhost:9123/v1/chat/completions \
 curl http://localhost:9123/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "deepseek-v3",
+    "model": "deepseek-chat",
     "messages": [{"role": "user", "content": "Hello!"}],
     "stream": true
   }'
@@ -241,12 +248,12 @@ data: [DONE]
 
 | Header | Description |
 |--------|-------------|
-| `x-chat-session-id` | DeepSeek session ID — pass as `sessionId` in next request to continue the conversation |
-| `x-parent-message-id` | Latest message ID — pass as `parent_message_id` in next request for threaded replies |
+| `x-chat-session-id` | Only with `DEEPSEEK_KEEP_SESSIONS=true`: the DeepSeek chat ID, to pass as `sessionId` |
+| `x-parent-message-id` | The reply's message ID, to pass as `parent_message_id` with `sessionId` |
 
 ### `GET /`
 
-Built-in browser chat UI for testing. Supports thinking mode, search, and conversation threading.
+Built-in chat page: model picker, thinking and search toggles, Markdown replies, stop and new chat. The API key is kept in the browser. No build step; the page is one embedded HTML file.
 
 ---
 
@@ -266,8 +273,8 @@ The repo includes an `opencode.json` that configures opencode to use this proxy.
         "apiKey": "sk-local"
       },
       "models": {
-        "deepseek-v3": {"name": "DeepSeek V3"},
-        "deepseek-r1": {"name": "DeepSeek R1"},
+        "deepseek-chat": {"name": "DeepSeek (default)"},
+        "deepseek-expert": {"name": "DeepSeek (expert)"},
         "taalas-llama3.1-8b": {"name": "Llama 3.1 8B (free)"}
       }
     }
@@ -344,23 +351,3 @@ Binary sizes (approx):
 - Linux amd64 (stripped): ~12MB
 
 Memory usage at runtime: ~20-50MB
-
----
-
-## Legacy Stack (TypeScript + Python)
-
-The original two-process stack (`src/index.ts` + `src/backend.py`) is still present in the repository for reference but is no longer the recommended way to run the proxy. The Go binary replaces both processes with equivalent functionality.
-
-If you need the legacy stack:
-
-```bash
-# Python 3.11 backend
-python3.11 -m venv .venv311
-source .venv311/bin/activate
-pip install fastapi uvicorn "curl-cffi==0.7.4" python-dotenv wasmtime numpy
-python src/backend.py
-
-# TypeScript proxy (separate terminal)
-bun install
-bun run dev
-```

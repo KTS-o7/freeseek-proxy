@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const toolCallKey  = "opencode_tool_call"
+const toolCallKey = "opencode_tool_call"
 const toolCallsKey = "opencode_tool_calls"
 
 // Tool mirrors the OpenAI function tool definition.
@@ -113,6 +113,18 @@ func buildSystemPrompt(tools []Tool, toolChoice interface{}) string {
 	return strings.Join(parts, "\n\n")
 }
 
+// BuildChatPrompt turns an OpenAI message list into one DeepSeek prompt. DeepSeek's web
+// API takes a single prompt per turn, so earlier turns and system messages go in as text.
+func BuildChatPrompt(messages []Message) string {
+	if len(messages) == 1 {
+		return NormalizeContent(messages[0].Content)
+	}
+	return formatConversation(messages) + "\n\nReply to the latest user message. Do not start your reply with \"Assistant:\"."
+}
+
+// NormalizeContent flattens string or content-part message content to text.
+func NormalizeContent(content interface{}) string { return normalizeContent(content) }
+
 func normalizeContent(content interface{}) string {
 	switch v := content.(type) {
 	case string:
@@ -202,8 +214,8 @@ func ParseEnvelope(text string, tools []Tool) []ToolCall {
 				argsStr = string(b)
 			}
 			calls = append(calls, ToolCall{
-				ID:   "call_" + strings.ReplaceAll(uuid.New().String(), "-", ""),
-				Type: "function",
+				ID:       "call_" + strings.ReplaceAll(uuid.New().String(), "-", ""),
+				Type:     "function",
 				Function: ToolCallFunction{Name: name, Arguments: argsStr},
 			})
 		}

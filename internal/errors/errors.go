@@ -26,13 +26,35 @@ type ProxyError struct {
 
 func (e *ProxyError) Error() string { return e.Msg }
 
-func Auth(msg string) *ProxyError        { return &ProxyError{Msg: msg, StatusCode: 401, kind: KindAuth} }
-func RateLimit(msg string) *ProxyError   { return &ProxyError{Msg: msg, StatusCode: 429, kind: KindRateLimit} }
-func Network(msg string) *ProxyError     { return &ProxyError{Msg: msg, StatusCode: 502, kind: KindNetwork} }
-func Cloudflare(msg string) *ProxyError  { return &ProxyError{Msg: msg, StatusCode: 503, kind: KindCloudflare} }
-func API(msg string, code int) *ProxyError { return &ProxyError{Msg: msg, StatusCode: code, kind: KindAPI} }
-func Server(msg string) *ProxyError      { return &ProxyError{Msg: msg, StatusCode: 502, kind: KindServer} }
-func Invalid(msg string) *ProxyError     { return &ProxyError{Msg: msg, StatusCode: 400, kind: KindInvalid} }
+// IsAuth reports a DeepSeek token problem (not the proxy's own API key).
+func (e *ProxyError) IsAuth() bool { return e.kind == KindAuth }
+
+// IsCloudflare reports a Cloudflare/WAF block.
+func (e *ProxyError) IsCloudflare() bool { return e.kind == KindCloudflare }
+
+// UpstreamAuth is a DeepSeek token problem. It is a 503, not a 401, so clients do not
+// mistake it for a wrong proxy API key.
+func UpstreamAuth(msg string) *ProxyError {
+	return &ProxyError{Msg: msg, StatusCode: 503, kind: KindAuth}
+}
+
+func Auth(msg string) *ProxyError { return &ProxyError{Msg: msg, StatusCode: 401, kind: KindAuth} }
+func RateLimit(msg string) *ProxyError {
+	return &ProxyError{Msg: msg, StatusCode: 429, kind: KindRateLimit}
+}
+func Network(msg string) *ProxyError {
+	return &ProxyError{Msg: msg, StatusCode: 502, kind: KindNetwork}
+}
+func Cloudflare(msg string) *ProxyError {
+	return &ProxyError{Msg: msg, StatusCode: 503, kind: KindCloudflare}
+}
+func API(msg string, code int) *ProxyError {
+	return &ProxyError{Msg: msg, StatusCode: code, kind: KindAPI}
+}
+func Server(msg string) *ProxyError { return &ProxyError{Msg: msg, StatusCode: 502, kind: KindServer} }
+func Invalid(msg string) *ProxyError {
+	return &ProxyError{Msg: msg, StatusCode: 400, kind: KindInvalid}
+}
 
 type openAIError struct {
 	Error struct {

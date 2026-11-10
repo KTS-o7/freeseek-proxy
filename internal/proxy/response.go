@@ -42,7 +42,9 @@ func WriteNonStreaming(w http.ResponseWriter, model, promptText, fullText string
 		"usage": buildUsage(promptText, fullText),
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("x-chat-session-id", sessionID)
+	if sessionID != "" {
+		w.Header().Set("x-chat-session-id", sessionID)
+	}
 	if msgID != nil {
 		w.Header().Set("x-parent-message-id", fmt.Sprintf("%v", msgID))
 	}

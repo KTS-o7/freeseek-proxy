@@ -1,583 +1,448 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>API Chat</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>freeseek</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Cormorant+Garamond:wght@500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="https://unpkg.com/@knadh/oat/oat.min.css" />
     <style>
       :root {
+        color-scheme: light dark;
         --page: #f4f2ee;
-        --surface: rgba(255, 255, 255, 0.78);
-        --surface-strong: rgba(255, 255, 255, 0.92);
-        --ink: #6e655d;
+        --surface: #fffdf9;
+        --ink: #2f2a25;
+        --soft: #6e655d;
         --muted: #9a9289;
-        --line: rgba(110, 101, 93, 0.14);
-        --line-strong: rgba(110, 101, 93, 0.22);
-        --shadow: 0 12px 40px rgba(88, 79, 69, 0.06);
+        --line: rgba(110, 101, 93, 0.16);
+        --line-strong: rgba(110, 101, 93, 0.3);
+        --accent: #b4532a;
+        --user: #ebe6dd;
+        --code: #f0ece5;
+        --error: #b3261e;
+        --shadow: 0 10px 34px rgba(88, 79, 69, 0.08);
       }
-
-      * {
-        box-sizing: border-box;
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --page: #171513;
+          --surface: #1f1c19;
+          --ink: #ece6dc;
+          --soft: #b3aa9f;
+          --muted: #857c72;
+          --line: rgba(236, 230, 220, 0.1);
+          --line-strong: rgba(236, 230, 220, 0.2);
+          --accent: #e58a5c;
+          --user: #2a2622;
+          --code: #12100e;
+          --error: #ff8a80;
+          --shadow: 0 10px 34px rgba(0, 0, 0, 0.3);
+        }
       }
-
-      html,
-      body {
-        min-height: 100%;
-      }
-
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
       body {
         margin: 0;
-        min-height: 100vh;
-        min-height: 100dvh;
         background: var(--page);
         color: var(--ink);
-        font-family: "Instrument Sans", sans-serif;
-      }
-
-      main {
-        width: min(100%, 62rem);
-        margin: 0 auto;
-        min-height: 100vh;
-        min-height: 100dvh;
-        padding: clamp(2rem, 6vw, 4rem) 1rem calc(2rem + env(safe-area-inset-bottom));
-        display: grid;
-        align-content: center;
-        gap: 1.25rem;
-      }
-
-      .hero {
-        text-align: center;
-        display: grid;
-        gap: 0.5rem;
-      }
-
-      .eyebrow {
-        margin: 0;
-        color: var(--muted);
-        font-size: 0.78rem;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-      }
-
-      h1 {
-        margin: 0;
-        font-family: "Cormorant Garamond", serif;
-        font-size: clamp(3.3rem, 8vw, 5.2rem);
-        line-height: 0.92;
-        font-weight: 600;
-        letter-spacing: -0.04em;
-      }
-
-      .transcript {
-        width: min(100%, 46rem);
-        margin: 0 auto;
-        display: grid;
-        gap: 0.85rem;
-      }
-
-      .transcript[hidden] {
-        display: none;
-      }
-
-      .message {
-        padding: 0.95rem 1rem;
-        border: 1px solid var(--line);
-        border-radius: 1.2rem;
-        background: rgba(255, 255, 255, 0.4);
-        backdrop-filter: blur(18px);
-      }
-
-      .message[data-role="assistant"] {
-        background: var(--surface-strong);
-      }
-
-      .message[data-role="error"] {
-        border-color: rgba(154, 83, 83, 0.24);
-        color: #8f5555;
-        background: rgba(255, 246, 245, 0.92);
-      }
-
-      .message header {
-        margin-bottom: 0.35rem;
-        color: var(--muted);
-        font-size: 0.78rem;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-      }
-
-      .message p {
-        margin: 0;
-        white-space: pre-wrap;
-        overflow-wrap: anywhere;
-        line-height: 1.65;
-      }
-
-      .sr-only {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        padding: 0;
-        margin: -1px;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-        white-space: nowrap;
-        border: 0;
-      }
-
-      .composer {
-        width: min(100%, 48rem);
-        margin: 0 auto;
-        border: 1px solid var(--line);
-        border-radius: 1.35rem;
-        padding: 1rem;
-        background: var(--surface);
-        box-shadow: var(--shadow);
-        backdrop-filter: blur(18px);
-      }
-
-      .composer textarea {
-        width: 100%;
-        min-height: 8.25rem;
-        resize: none;
-        border: 0;
-        background: transparent;
-        padding: 0.2rem 0;
-        box-shadow: none;
-        color: var(--ink);
-        font: inherit;
-        line-height: 1.6;
-      }
-
-      .composer textarea:focus {
-        outline: none;
-      }
-
-      .composer:focus-within {
-        border-color: var(--line-strong);
-        box-shadow: 0 0 0 3px rgba(110, 101, 93, 0.08), var(--shadow);
-      }
-
-      .composer textarea::placeholder {
-        color: #b8b0a7;
-      }
-
-      .options {
-        margin-top: 0.9rem;
-        padding-top: 0.85rem;
-        border-top: 1px solid var(--line);
-        display: grid;
-        gap: 0.85rem;
-      }
-
-      .option-grid {
-        display: grid;
-        gap: 0.75rem;
-        grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-      }
-
-      .toggle {
+        font: 16px/1.6 "Instrument Sans", system-ui, sans-serif;
         display: flex;
-        align-items: center;
-        gap: 0.6rem;
-        min-height: 2.5rem;
-        padding: 0.7rem 0.8rem;
-        border: 1px solid var(--line);
-        border-radius: 0.95rem;
-        background: rgba(255, 255, 255, 0.5);
-        color: var(--ink);
-        font-size: 0.92rem;
+        flex-direction: column;
       }
+      button, select, input, textarea { font: inherit; color: inherit; }
+      button { cursor: pointer; }
+      :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-      .toggle input {
-        margin: 0;
+      /* top bar */
+      .bar {
+        position: sticky; top: 0; z-index: 5;
+        display: flex; align-items: center; gap: 10px;
+        padding: 10px max(16px, env(safe-area-inset-left)) 10px max(16px, env(safe-area-inset-right));
+        background: color-mix(in srgb, var(--page) 88%, transparent);
+        backdrop-filter: blur(8px);
+        border-bottom: 1px solid var(--line);
       }
-
-      .field label {
-        display: block;
-        margin-bottom: 0.45rem;
-        color: var(--muted);
-        font-size: 0.78rem;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
+      .brand { font: 600 22px/1 "Cormorant Garamond", serif; letter-spacing: 0.01em; margin-right: auto; }
+      .bar select, .ghost {
+        height: 36px; border-radius: 10px; border: 1px solid var(--line-strong);
+        background: var(--surface); padding: 0 12px;
       }
+      .bar select { min-width: 0; max-width: 52vw; flex: 0 1 auto; text-overflow: ellipsis; }
+      .bar > * { flex-shrink: 0; }
+      .bar > select { flex-shrink: 1; }
+      .ghost { display: inline-flex; align-items: center; gap: 6px; }
+      .ghost:hover { border-color: var(--soft); }
+      .ghost svg { width: 16px; height: 16px; }
+      .ghost .label { display: inline; }
+      .ghost.warn { border-color: var(--error); color: var(--error); }
 
-      .field input {
-        width: 100%;
+      /* settings */
+      .settings {
+        position: absolute; right: 16px; top: 54px; width: min(340px, calc(100vw - 32px));
+        background: var(--surface); border: 1px solid var(--line-strong); border-radius: 14px;
+        padding: 14px; box-shadow: var(--shadow);
       }
-
-      .composer footer {
-        margin-top: 0.9rem;
-        padding-top: 0.85rem;
-        border-top: 1px solid var(--line);
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 1rem;
+      .settings label { display: block; font-size: 13px; color: var(--soft); margin-bottom: 6px; }
+      .settings input {
+        width: 100%; height: 38px; border-radius: 10px; border: 1px solid var(--line-strong);
+        background: var(--page); padding: 0 10px;
       }
+      .settings p { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
 
-      .status {
-        color: var(--muted);
-        font-size: 0.9rem;
+      /* transcript */
+      main { flex: 1; width: 100%; max-width: 820px; margin: 0 auto; padding: 24px 16px 8px; }
+      .empty { text-align: center; padding: 12vh 0 4vh; }
+      .empty h1 { font: 600 clamp(36px, 7vw, 64px)/1.05 "Cormorant Garamond", serif; margin: 0 0 12px; color: var(--soft); }
+      .empty p { margin: 0; color: var(--muted); }
+      .msg { margin: 0 0 22px; }
+      .msg.user { display: flex; justify-content: flex-end; }
+      .msg.user .body {
+        background: var(--user); border-radius: 16px 16px 4px 16px; padding: 10px 14px;
+        max-width: min(85%, 640px); white-space: pre-wrap; overflow-wrap: anywhere;
       }
+      .msg.assistant .body { overflow-wrap: anywhere; }
+      .msg.error .body { color: var(--error); border-left: 3px solid var(--error); padding-left: 12px; }
+      .meta { display: flex; gap: 12px; margin-top: 4px; font-size: 12px; color: var(--muted); }
+      .meta button { border: 0; background: none; padding: 0; color: var(--muted); }
+      .meta button:hover { color: var(--ink); }
+      .cursor::after { content: "▍"; color: var(--accent); animation: blink 1s steps(2) infinite; }
+      @keyframes blink { 50% { opacity: 0; } }
 
-      .connection {
-        margin-top: 0.9rem;
-      }
+      /* markdown */
+      .md > :first-child { margin-top: 0; }
+      .md > :last-child { margin-bottom: 0; }
+      .md p, .md ul, .md ol, .md pre, .md blockquote { margin: 0 0 12px; }
+      .md h1, .md h2, .md h3 { font-size: 1.08em; margin: 18px 0 8px; }
+      .md ul, .md ol { padding-left: 22px; }
+      .md li { margin: 2px 0; }
+      .md code { font: 0.9em/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code); border-radius: 5px; padding: 1px 5px; }
+      .md pre { position: relative; background: var(--code); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; overflow-x: auto; }
+      .md pre code { background: none; padding: 0; font-size: 13.5px; }
+      .md pre .copy { position: absolute; top: 6px; right: 6px; font-size: 12px; border: 1px solid var(--line-strong); background: var(--surface); border-radius: 6px; padding: 2px 8px; color: var(--soft); }
+      .md blockquote { border-left: 3px solid var(--line-strong); padding-left: 12px; color: var(--soft); }
+      .md a { color: var(--accent); }
+      .md hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
 
-      .connection summary {
-        cursor: pointer;
-        color: var(--muted);
-        font-size: 0.88rem;
-        list-style: none;
-      }
+      /* composer */
+      .dock { position: sticky; bottom: 0; background: linear-gradient(transparent, var(--page) 22%); padding: 14px 16px max(14px, env(safe-area-inset-bottom)); }
+      form:focus-within { border-color: var(--soft); }
+      form { max-width: 820px; margin: 0 auto; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 18px; box-shadow: var(--shadow); padding: 10px 10px 8px 14px; }
+      textarea { width: 100%; border: 0; background: transparent; resize: none; outline: none !important; min-height: 28px; max-height: 40vh; padding: 4px 0; line-height: 1.5; }
+      .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .toggle { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 999px; font-size: 14px; color: var(--soft); user-select: none; }
+      .toggle input { accent-color: var(--accent); margin: 0; }
+      .toggle:has(input:checked) { color: var(--ink); border-color: var(--accent); }
+      .toggle[hidden] { display: none; }
+      .hint { font-size: 12px; color: var(--muted); margin-left: auto; }
+      .hint + .send { margin-left: 0; }
+      .send { margin-left: auto; width: 38px; height: 38px; border-radius: 12px; border: 0; background: var(--ink); color: var(--page); display: inline-grid; place-items: center; }
+      .send:disabled { opacity: 0.35; cursor: default; }
+      .send svg { width: 18px; height: 18px; }
+      .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
-      .connection summary::-webkit-details-marker {
-        display: none;
-      }
-
-      .connection[open] {
-        padding-top: 0.85rem;
-        border-top: 1px solid var(--line);
-      }
-
-      .connection label {
-        display: block;
-        margin-bottom: 0.45rem;
-        color: var(--muted);
-        font-size: 0.78rem;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-      }
-
-      .connection input {
-        width: 100%;
-      }
-
-      .composer button {
-        min-width: 5.75rem;
-        border-color: var(--line-strong);
-        background: rgba(255, 255, 255, 0.88);
-      }
-
-      .composer button[disabled] {
-        opacity: 0.6;
-      }
-
-      @media (max-width: 640px) {
-        main {
-          align-content: start;
-          padding-top: 4rem;
-        }
-
-        h1 {
-          font-size: clamp(2.7rem, 15vw, 4rem);
-        }
-
-        .composer {
-          padding: 0.9rem;
-          border-radius: 1.1rem;
-        }
-
-        .composer textarea {
-          min-height: 7rem;
-        }
+      @media (max-width: 560px) {
+        .ghost .label, .hint { display: none; }
+        .brand { font-size: 20px; }
+        .bar { gap: 8px; }
+        .bar select { max-width: 46vw; }
+        .hint + .send { margin-left: auto; }
+        main { padding-top: 16px; }
       }
     </style>
   </head>
   <body>
-    <main>
-      <section class="hero">
-        <p class="eyebrow">API chat</p>
-        <h1>What would you like to do?</h1>
-      </section>
+    <header class="bar">
+      <span class="brand">freeseek</span>
+      <label class="sr" for="model">Model</label>
+      <select id="model"></select>
+      <button id="new-chat" class="ghost" type="button" title="New chat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        <span class="label">New chat</span>
+      </button>
+      <button id="key-button" class="ghost" type="button" title="API key" aria-expanded="false" aria-controls="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4.5" /><path d="m10.7 12.3 9.3-9.3M17 6l3 3M15 8l2 2" /></svg>
+        <span class="label">Key</span>
+      </button>
+      <div id="settings" class="settings" hidden>
+        <label for="api-key">Proxy API key</label>
+        <input id="api-key" type="password" autocomplete="off" placeholder="Paste the proxy's API_KEY" />
+        <p>Saved in this browser only. Sent as a Bearer token to this proxy.</p>
+      </div>
+    </header>
 
-      <section id="transcript" class="transcript" aria-live="polite" hidden></section>
+    <main id="transcript" aria-live="polite"></main>
 
-      <form id="chat-form" class="composer">
-        <label for="prompt" class="sr-only">Message</label>
-        <textarea id="prompt" name="prompt" placeholder="Ask anything..." autocomplete="off" aria-label="Message"></textarea>
-        <section class="options" aria-label="Request options">
-          <div class="option-grid">
-            <label class="toggle" for="thinking-enabled">
-              <input id="thinking-enabled" type="checkbox" />
-              <span>Thinking enabled</span>
-            </label>
-            <label class="toggle" for="search-enabled">
-              <input id="search-enabled" type="checkbox" />
-              <span>Search enabled</span>
-            </label>
-          </div>
-          <div class="field">
-            <label for="parent-message-id">Parent message ID</label>
-            <input id="parent-message-id" type="text" placeholder="Optional" autocomplete="off" />
-          </div>
-        </section>
-        <details class="connection">
-          <summary>Connection</summary>
-          <label for="api-key">API key</label>
-          <input id="api-key" type="password" placeholder="Optional for protected proxies" autocomplete="off" />
-        </details>
-        <footer>
-          <span id="status" class="status">Ready</span>
-          <button id="send" type="submit">Send</button>
-        </footer>
+    <div class="dock">
+      <form id="composer">
+        <label class="sr" for="prompt">Message</label>
+        <textarea id="prompt" rows="1" placeholder="Ask anything" autocomplete="off"></textarea>
+        <div class="controls">
+          <label class="toggle" id="thinking-wrap"><input id="thinking" type="checkbox" /> Thinking</label>
+          <label class="toggle" id="search-wrap"><input id="search" type="checkbox" /> Search</label>
+          <span class="hint">Enter to send · Shift+Enter for a new line</span>
+          <button id="send" class="send" type="submit" aria-label="Send" disabled></button>
+        </div>
       </form>
-    </main>
+    </div>
 
     <script>
-      const form = document.querySelector("#chat-form");
-      const prompt = document.querySelector("#prompt");
-      const transcript = document.querySelector("#transcript");
-      const status = document.querySelector("#status");
-      const send = document.querySelector("#send");
-      const apiKeyInput = document.querySelector("#api-key");
-      const thinkingEnabledInput = document.querySelector("#thinking-enabled");
-      const searchEnabledInput = document.querySelector("#search-enabled");
-      const parentMessageIdInput = document.querySelector("#parent-message-id");
-      const history = [];
-      const SESSION_STORAGE_KEY = "chat-session-id";
-      const PARENT_MESSAGE_STORAGE_KEY = "chat-parent-message-id";
-      let sessionId = window.localStorage.getItem(SESSION_STORAGE_KEY);
-      let parentMessageId = window.localStorage.getItem(PARENT_MESSAGE_STORAGE_KEY) || "";
+      const $ = (s) => document.querySelector(s);
+      const transcript = $("#transcript"), form = $("#composer"), prompt = $("#prompt"), send = $("#send");
+      const modelSel = $("#model"), keyInput = $("#api-key"), keyBtn = $("#key-button"), settings = $("#settings");
+      const thinking = $("#thinking"), search = $("#search");
+      const ICON_SEND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
+      const ICON_STOP = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+      const LABELS = { "deepseek-chat": "DeepSeek", "deepseek-expert": "DeepSeek Expert", "taalas-llama3.1-8b": "Llama 3.1 8B" };
+      const store = {
+        get: (k, d) => { try { const v = localStorage.getItem("fs." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+        set: (k, v) => localStorage.setItem("fs." + k, JSON.stringify(v)),
+      };
 
-      parentMessageIdInput.value = parentMessageId;
+      let history = store.get("history", []);
+      let controller = null;
 
-      function persistSessionId(value) {
-        sessionId = value;
+      // ---------- markdown (escape first, then add a small safe subset) ----------
+      const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      function inline(s) {
+        const codes = [];
+        s = s.replace(/`([^`\n]+)`/g, (_, c) => { codes.push(c); return "\u0000" + (codes.length - 1) + "\u0000"; });
+        s = esc(s)
+          .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+          .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+          .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+        return s.replace(/\u0000(\d+)\u0000/g, (_, i) => "<code>" + esc(codes[+i]) + "</code>");
+      }
+      function markdown(src) {
+        const out = [], lines = src.replace(/\r/g, "").split("\n");
+        let i = 0, para = [];
+        const flush = () => { if (para.length) { out.push("<p>" + para.map(inline).join("<br>") + "</p>"); para = []; } };
+        while (i < lines.length) {
+          const line = lines[i];
+          const fence = line.match(/^\s*```\s*([\w+-]*)/);
+          if (fence) {
+            flush();
+            const code = [];
+            i++;
+            while (i < lines.length && !/^\s*```/.test(lines[i])) code.push(lines[i++]);
+            i++;
+            out.push('<pre><button class="copy" type="button">Copy</button><code>' + esc(code.join("\n")) + "</code></pre>");
+            continue;
+          }
+          let m;
+          if ((m = line.match(/^(#{1,6})\s+(.*)/))) { flush(); const n = Math.min(m[1].length + 1, 3); out.push(`<h${n}>${inline(m[2])}</h${n}>`); i++; continue; }
+          if (/^\s*(?:[-*_]\s*){3,}$/.test(line) && !/^\s*[-*]\s+\S/.test(line)) { flush(); out.push("<hr>"); i++; continue; }
+          if (/^\s*>/.test(line)) {
+            flush();
+            const q = [];
+            while (i < lines.length && /^\s*>/.test(lines[i])) q.push(lines[i++].replace(/^\s*>\s?/, ""));
+            out.push("<blockquote>" + markdown(q.join("\n")) + "</blockquote>");
+            continue;
+          }
+          if (/^\s*([-*+]|\d+[.)])\s+/.test(line)) {
+            flush();
+            const ordered = /^\s*\d/.test(line), items = [];
+            while (i < lines.length && /^\s*([-*+]|\d+[.)])\s+/.test(lines[i])) {
+              let item = lines[i++].replace(/^\s*([-*+]|\d+[.)])\s+/, "");
+              while (i < lines.length && /^\s{2,}\S/.test(lines[i]) && !/^\s*([-*+]|\d+[.)])\s+/.test(lines[i])) item += " " + lines[i++].trim();
+              items.push("<li>" + inline(item) + "</li>");
+            }
+            out.push((ordered ? "<ol>" : "<ul>") + items.join("") + (ordered ? "</ol>" : "</ul>"));
+            continue;
+          }
+          if (!line.trim()) { flush(); i++; continue; }
+          para.push(line);
+          i++;
+        }
+        flush();
+        return out.join("");
+      }
 
-        if (value) {
-          window.localStorage.setItem(SESSION_STORAGE_KEY, value);
+      // ---------- rendering ----------
+      function render() {
+        transcript.innerHTML = "";
+        if (!history.length) {
+          transcript.innerHTML = '<div class="empty"><h1>What would you like to do?</h1><p>Ask anything. Replies stream in as they are written.</p></div>';
           return;
         }
-
-        window.localStorage.removeItem(SESSION_STORAGE_KEY);
+        history.forEach((m, i) => transcript.appendChild(messageNode(m.role, m.content, i)));
       }
-
-      function persistParentMessageId(value) {
-        parentMessageId = value;
-        parentMessageIdInput.value = value;
-
-        if (value) {
-          window.localStorage.setItem(PARENT_MESSAGE_STORAGE_KEY, value);
-          return;
-        }
-
-        window.localStorage.removeItem(PARENT_MESSAGE_STORAGE_KEY);
+      function messageNode(role, content, index) {
+        const wrap = document.createElement("div");
+        wrap.className = "msg " + role;
+        const body = document.createElement("div");
+        body.className = "body" + (role === "assistant" ? " md" : "");
+        if (role === "assistant") body.innerHTML = markdown(content); else body.textContent = content;
+        wrap.appendChild(body);
+        if (role === "assistant" && index !== undefined) wrap.appendChild(metaNode(content));
+        return wrap;
       }
-
-      function syncLayout() {
-        document.querySelector("main").style.alignContent = history.length ? "start" : "center";
+      function metaNode(content) {
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        const copy = document.createElement("button");
+        copy.type = "button"; copy.textContent = "Copy";
+        copy.onclick = () => navigator.clipboard.writeText(content).then(() => { copy.textContent = "Copied"; setTimeout(() => (copy.textContent = "Copy"), 1200); });
+        meta.appendChild(copy);
+        return meta;
       }
-
-      function setPending(isPending) {
-        prompt.disabled = isPending;
-        send.disabled = isPending;
-        thinkingEnabledInput.disabled = isPending;
-        searchEnabledInput.disabled = isPending;
-        parentMessageIdInput.disabled = isPending;
-        status.textContent = isPending ? "Streaming..." : "Ready";
+      function errorNode(text) {
+        const n = messageNode("error", text);
+        transcript.appendChild(n);
+        n.scrollIntoView({ block: "end" });
       }
+      transcript.addEventListener("click", (e) => {
+        const b = e.target.closest("pre .copy");
+        if (!b) return;
+        navigator.clipboard.writeText(b.nextElementSibling.textContent).then(() => { b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1200); });
+      });
+      const nearBottom = () => window.innerHeight + window.scrollY >= document.body.scrollHeight - 120;
 
-      function scrollToBottom(behavior = "auto") {
-        window.scrollTo({ top: document.body.scrollHeight, behavior });
+      // ---------- models and settings ----------
+      async function loadModels() {
+        let ids = ["deepseek-chat", "deepseek-expert", "taalas-llama3.1-8b"];
+        try {
+          const r = await fetch("/v1/models");
+          if (r.ok) ids = (await r.json()).data.map((m) => m.id);
+        } catch {}
+        modelSel.innerHTML = ids.map((id) => `<option value="${esc(id)}">${esc(LABELS[id] || id)}</option>`).join("");
+        const saved = store.get("model", "deepseek-chat");
+        modelSel.value = ids.includes(saved) ? saved : ids[0];
+        syncToggles();
       }
+      function syncToggles() {
+        const ds = modelSel.value.startsWith("deepseek");
+        $("#thinking-wrap").hidden = !ds;
+        $("#search-wrap").hidden = !ds;
+      }
+      modelSel.onchange = () => { store.set("model", modelSel.value); syncToggles(); };
+      thinking.checked = store.get("thinking", false);
+      search.checked = store.get("search", false);
+      thinking.onchange = () => store.set("thinking", thinking.checked);
+      search.onchange = () => store.set("search", search.checked);
+      keyInput.value = store.get("apiKey", "");
+      keyInput.oninput = () => { store.set("apiKey", keyInput.value.trim()); keyBtn.classList.remove("warn"); };
+      function toggleSettings(open) {
+        settings.hidden = !open;
+        keyBtn.setAttribute("aria-expanded", String(open));
+        if (open) keyInput.focus();
+      }
+      keyBtn.onclick = () => toggleSettings(settings.hidden);
+      document.addEventListener("click", (e) => { if (!settings.hidden && !settings.contains(e.target) && !keyBtn.contains(e.target)) toggleSettings(false); });
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape") toggleSettings(false); });
+      $("#new-chat").onclick = () => { if (controller) controller.abort(); history = []; store.set("history", history); render(); prompt.focus(); };
 
-      function focusPrompt() {
-        if (window.matchMedia("(pointer:fine) and (min-width: 641px)").matches) {
+      // ---------- composer ----------
+      function setBusy(busy) {
+        send.innerHTML = busy ? ICON_STOP : ICON_SEND;
+        send.setAttribute("aria-label", busy ? "Stop" : "Send");
+        send.disabled = !busy && !prompt.value.trim();
+      }
+      function autosize() { prompt.style.height = "auto"; prompt.style.height = prompt.scrollHeight + "px"; }
+      prompt.addEventListener("input", () => { autosize(); if (!controller) send.disabled = !prompt.value.trim(); });
+      prompt.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); }
+      });
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        if (controller) { controller.abort(); return; }
+        const text = prompt.value.trim();
+        if (!text) return;
+        prompt.value = ""; autosize();
+        ask(text);
+      });
+
+      async function ask(text) {
+        if (!history.length) transcript.innerHTML = "";
+        history.push({ role: "user", content: text });
+        store.set("history", history);
+        transcript.appendChild(messageNode("user", text));
+
+        const node = messageNode("assistant", "");
+        const body = node.querySelector(".body");
+        body.classList.add("cursor");
+        transcript.appendChild(node);
+        node.scrollIntoView({ block: "end" });
+
+        controller = new AbortController();
+        setBusy(true);
+        let reply = "";
+        try {
+          const headers = { "Content-Type": "application/json" };
+          const key = keyInput.value.trim();
+          if (key) headers.Authorization = "Bearer " + key;
+          const ds = modelSel.value.startsWith("deepseek");
+          const res = await fetch("/v1/chat/completions", {
+            method: "POST",
+            headers,
+            signal: controller.signal,
+            body: JSON.stringify({
+              model: modelSel.value,
+              stream: true,
+              messages: history,
+              thinking_enabled: ds && thinking.checked,
+              search_enabled: ds && search.checked,
+            }),
+          });
+          if (!res.ok) {
+            let msg = res.status + " " + res.statusText;
+            try { const j = await res.json(); if (j.error && j.error.message) msg = j.error.message; } catch {}
+            if (res.status === 401) { keyBtn.classList.add("warn"); toggleSettings(true); msg = "The proxy needs an API key. Paste it under Key, then send again."; }
+            throw new Error(msg);
+          }
+          const reader = res.body.getReader(), decoder = new TextDecoder();
+          let buf = "";
+          for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split("\n");
+            buf = lines.pop();
+            let changed = false;
+            for (const line of lines) {
+              if (!line.startsWith("data:")) continue;
+              const data = line.slice(5).trim();
+              if (!data || data === "[DONE]") continue;
+              try {
+                const delta = JSON.parse(data).choices?.[0]?.delta?.content;
+                if (delta) { reply += delta; changed = true; }
+              } catch {}
+            }
+            if (changed) {
+              const stick = nearBottom();
+              body.innerHTML = markdown(reply);
+              if (stick) node.scrollIntoView({ block: "end" });
+            }
+          }
+          if (!reply) throw new Error("The model sent an empty reply.");
+        } catch (err) {
+          if (err.name !== "AbortError") {
+            if (!reply) { node.remove(); history.pop(); store.set("history", history); prompt.value = text; autosize(); }
+            errorNode(err.message || "Something went wrong.");
+          }
+        } finally {
+          body.classList.remove("cursor");
+          if (reply) {
+            history.push({ role: "assistant", content: reply });
+            store.set("history", history);
+            body.innerHTML = markdown(reply);
+            node.appendChild(metaNode(reply));
+          } else if (node.isConnected) {
+            node.remove();
+            if (history.at(-1)?.role === "user") { history.pop(); store.set("history", history); prompt.value = text; autosize(); }
+          }
+          controller = null;
+          setBusy(false);
           prompt.focus();
         }
       }
 
-      function appendMessage(role, content) {
-        transcript.hidden = false;
-
-        const article = document.createElement("article");
-        article.className = "message";
-        article.dataset.role = role;
-
-        const heading = document.createElement("header");
-        heading.textContent = role === "user" ? "You" : role === "assistant" ? "Assistant" : "Error";
-
-        const body = document.createElement("p");
-        body.textContent = content;
-
-        article.append(heading, body);
-        transcript.append(article);
-        syncLayout();
-        scrollToBottom("smooth");
-        return body;
-      }
-
-      async function streamResponse(messages, assistantNode) {
-        let response;
-        const requestParentMessageId = parentMessageIdInput.value.trim();
-
-        try {
-          const headers = { "content-type": "application/json" };
-          const apiKey = apiKeyInput.value.trim();
-
-          if (apiKey) {
-            headers.authorization = `Bearer ${apiKey}`;
-          }
-
-          response = await fetch("/v1/chat/completions", {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              model: "deepseek-chat",
-              stream: true,
-              messages,
-              thinking_enabled: thinkingEnabledInput.checked,
-              search_enabled: searchEnabledInput.checked,
-              ...(requestParentMessageId ? { parent_message_id: requestParentMessageId } : {}),
-              sessionId,
-            }),
-          });
-        } catch (error) {
-          throw error;
-        }
-
-        const nextSessionId = response.headers.get("x-chat-session-id");
-        if (nextSessionId) {
-          persistSessionId(nextSessionId);
-        }
-
-        const nextParentMessageId = response.headers.get("x-parent-message-id");
-        if (nextParentMessageId) {
-          persistParentMessageId(nextParentMessageId);
-        }
-
-        if (!response.ok) {
-          const fallback = response.status === 401
-            ? "Enter a valid API key in Connection to use this proxy."
-            : `Request failed with status ${response.status}`;
-
-          try {
-            const data = await response.json();
-            throw new Error(data.error?.message || fallback);
-          } catch (error) {
-            if (error instanceof Error) {
-              throw error;
-            }
-
-            throw new Error(fallback);
-          }
-        }
-
-        if (!response.body) {
-          throw new Error("Streaming is not available in this browser.");
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        function applyLine(line) {
-          if (!line.startsWith("data: ")) {
-            return false;
-          }
-
-          const payload = line.slice(6);
-
-          if (payload === "[DONE]") {
-            return true;
-          }
-
-          let chunk;
-
-          try {
-            chunk = JSON.parse(payload);
-          } catch {
-            return false;
-          }
-
-          const delta = chunk.choices?.[0]?.delta?.content;
-          if (!delta) {
-            return false;
-          }
-
-          assistantNode.textContent += delta;
-          scrollToBottom();
-          return false;
-        }
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            break;
-          }
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
-
-          for (const line of lines) {
-            const trimmed = line.trim();
-
-            if (applyLine(trimmed)) {
-              return;
-            }
-          }
-        }
-
-        const trailingLine = buffer.trim();
-        if (trailingLine) {
-          applyLine(trailingLine);
-        }
-      }
-
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-
-        const content = prompt.value.trim();
-        if (!content) {
-          return;
-        }
-
-        const userMessage = { role: "user", content };
-        history.push(userMessage);
-        appendMessage("user", content);
-        prompt.value = "";
-
-        const assistantNode = appendMessage("assistant", "");
-        setPending(true);
-
-        try {
-          await streamResponse(history, assistantNode);
-          history.push({ role: "assistant", content: assistantNode.textContent });
-        } catch (error) {
-          assistantNode.closest("article")?.remove();
-          appendMessage(
-            "error",
-            error instanceof Error ? error.message : "Something went wrong while streaming the response."
-          );
-        } finally {
-          setPending(false);
-          focusPrompt();
-          scrollToBottom();
-        }
-      });
-
-      prompt.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" && !event.shiftKey) {
-          event.preventDefault();
-          form.requestSubmit();
-        }
-      });
-
-      parentMessageIdInput.addEventListener("change", () => {
-        persistParentMessageId(parentMessageIdInput.value.trim());
-      });
-
-      syncLayout();
-      focusPrompt();
+      setBusy(false);
+      render();
+      loadModels();
+      prompt.focus();
     </script>
   </body>
 </html>

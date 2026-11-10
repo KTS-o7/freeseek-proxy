@@ -8,11 +8,11 @@
         "baseURL": "http://localhost:9123/v1"
       },
       "models": {
-        "deepseek-v3": {
-          "name": "DeepSeek V3"
+        "deepseek-chat": {
+          "name": "DeepSeek (default)"
         },
-        "deepseek-r1": {
-          "name": "DeepSeek R1"
+        "deepseek-expert": {
+          "name": "DeepSeek (expert)"
         },
         "taalas-llama3.1-8b": {
           "name": "Taalas Llama 3.1 8B"

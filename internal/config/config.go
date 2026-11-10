@@ -8,7 +8,9 @@ import (
 )
 
 type Config struct {
+	Host                 string
 	Port                 int
+	KeepSessions         bool
 	APIKey               string
 	AuthToken            string
 	Email                string
@@ -22,7 +24,9 @@ type Config struct {
 
 func Load() *Config {
 	return &Config{
+		Host:                 envRaw("HOST", "127.0.0.1"),
 		Port:                 envInt("PORT", 9123),
+		KeepSessions:         envBool("DEEPSEEK_KEEP_SESSIONS", false),
 		APIKey:               os.Getenv("API_KEY"),
 		AuthToken:            strings.TrimSpace(os.Getenv("DEEPSEEK_AUTH_TOKEN")),
 		Email:                strings.TrimSpace(os.Getenv("DEEPSEEK_EMAIL")),
@@ -53,6 +57,13 @@ func envBool(key string, def bool) bool {
 		return def
 	}
 	return v == "1" || v == "true" || v == "yes" || v == "on"
+}
+
+func envRaw(key, def string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return def
 }
 
 func envString(key, def string) string {

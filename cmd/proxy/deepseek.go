@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -16,11 +17,14 @@ import (
 	"github.com/KTS-o7/freeseek-proxy/internal/tools"
 )
 
+// modelTypeMap maps model names to chat.deepseek.com modes. The website decides which
+// model version each mode runs; the older names stay as aliases for existing clients.
 var modelTypeMap = map[string]string{
-	"deepseek-v3":       "default",
-	"deepseek-r1":       "expert",
 	"deepseek-chat":     "default",
+	"deepseek-expert":   "expert",
+	"deepseek-v3":       "default",
 	"deepseek-coder":    "default",
+	"deepseek-r1":       "expert",
 	"deepseek-reasoner": "expert",
 }
 
@@ -36,7 +40,7 @@ type chatRequest struct {
 	SessionID       string          `json:"sessionId"`
 }
 
-func handleChatCompletions(c *client.Client) http.HandlerFunc {
+func handleChatCompletions(c *client.Client, keepSessions bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req chatRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -56,13 +60,21 @@ func handleChatCompletions(c *client.Client) http.HandlerFunc {
 			handleTaalas(w, r, req, model)
 			return
 		}
-		handleDeepSeek(w, r, req, model, c)
+		handleDeepSeek(w, r, req, model, c, keepSessions)
 	}
 }
 
-func handleDeepSeek(w http.ResponseWriter, r *http.Request, req chatRequest, model string, c *client.Client) {
+func handleDeepSeek(w http.ResponseWriter, r *http.Request, req chatRequest, model string, c *client.Client, keepSessions bool) {
+	if _, ok := modelTypeMap[model]; !ok {
+		proxyerr.WriteJSON(w, proxyerr.Invalid(fmt.Sprintf("unknown model %q; use deepseek-chat, deepseek-expert or taalas-llama3.1-8b", model)))
+		return
+	}
+	// A request without sessionId is stateless: the proxy opens a DeepSeek chat for it,
+	// sends the whole conversation as one prompt, and deletes the chat afterwards
+	// (unless DEEPSEEK_KEEP_SESSIONS is on) so the DeepSeek account does not fill up.
+	stateless := req.SessionID == ""
 	sessionID := req.SessionID
-	if sessionID == "" {
+	if stateless {
 		var err error
 		sessionID, err = createSession(r.Context(), c)
 		if err != nil {
@@ -79,16 +91,29 @@ func handleDeepSeek(w http.ResponseWriter, r *http.Request, req chatRequest, mod
 	var prompt string
 	if toolsProvided {
 		prompt = tools.BuildPrompt(req.Messages, req.Tools, req.ToolChoice)
+	} else if stateless {
+		prompt = tools.BuildChatPrompt(req.Messages)
 	} else {
 		prompt = extractLastMessage(req.Messages)
+	}
+
+	visibleSession := sessionID
+	if stateless && !keepSessions {
+		visibleSession = ""
+		defer func(id string) {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+				defer cancel()
+				if err := c.DeleteSession(ctx, id); err != nil {
+					log.Printf("could not delete DeepSeek chat %s: %v", id, err)
+				}
+			}()
+		}(sessionID)
 	}
 
 	promptText := messagesText(req.Messages)
 
 	modelType := modelTypeMap[model]
-	if modelType == "" {
-		modelType = "default"
-	}
 
 	body := map[string]interface{}{
 		"chat_session_id":   sessionID,
@@ -117,18 +142,18 @@ func handleDeepSeek(w http.ResponseWriter, r *http.Request, req chatRequest, mod
 		parsed := tools.ParseEnvelope(fullText, req.Tools)
 
 		if req.Stream {
-			streamToolCompat(w, model, sessionID, msgID, fullText, parsed)
+			streamToolCompat(w, model, visibleSession, msgID, fullText, parsed)
 		} else {
 			if parsed != nil {
-				writeToolCallResponse(w, model, sessionID, msgID, parsed, promptText, fullText)
+				writeToolCallResponse(w, model, visibleSession, msgID, parsed, promptText, fullText)
 			} else {
-				proxy.WriteNonStreaming(w, model, promptText, fullText, msgID, sessionID)
+				proxy.WriteNonStreaming(w, model, promptText, fullText, msgID, visibleSession)
 			}
 		}
 		return
 	}
 
-	streamDeepSeek(w, resp, model, sessionID, req.ThinkingEnabled)
+	streamDeepSeek(w, resp, model, visibleSession, req.ThinkingEnabled)
 }
 
 func createSession(ctx context.Context, c *client.Client) (string, error) {
@@ -248,11 +273,7 @@ func writeToolCallResponse(w http.ResponseWriter, model, sessionID string, msgID
 func handleTaalas(w http.ResponseWriter, r *http.Request, req chatRequest, model string) {
 	msgs := make([]map[string]interface{}, len(req.Messages))
 	for i, m := range req.Messages {
-		c := ""
-		if s, ok := m.Content.(string); ok {
-			c = s
-		}
-		msgs[i] = map[string]interface{}{"role": m.Role, "content": c}
+		msgs[i] = map[string]interface{}{"role": m.Role, "content": tools.NormalizeContent(m.Content)}
 	}
 
 	text, err := taalas.Complete(msgs, model)
@@ -298,11 +319,7 @@ func extractLastMessage(messages []tools.Message) string {
 	if len(messages) == 0 {
 		return ""
 	}
-	m := messages[len(messages)-1]
-	if s, ok := m.Content.(string); ok {
-		return s
-	}
-	return ""
+	return tools.NormalizeContent(messages[len(messages)-1].Content)
 }
 
 func messagesText(messages []tools.Message) string {

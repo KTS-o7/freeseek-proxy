@@ -1,9 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -46,11 +47,11 @@ func main() {
 		if cfg.APIKey != "" {
 			r.Use(apiKeyMiddleware(cfg.APIKey))
 		}
-		r.Post("/v1/chat/completions", handleChatCompletions(deepseekClient))
+		r.Post("/v1/chat/completions", handleChatCompletions(deepseekClient, cfg.KeepSessions))
 	})
 
-	addr := fmt.Sprintf(":%d", cfg.Port)
-	log.Printf("freeseek-proxy listening on http://localhost%s", addr)
+	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
+	log.Printf("freeseek-proxy listening on http://%s", addr)
 	if err := http.ListenAndServe(addr, r); err != nil {
 		log.Fatalf("server error: %v", err)
 	}

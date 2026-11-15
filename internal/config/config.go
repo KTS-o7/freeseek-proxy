@@ -20,6 +20,8 @@ type Config struct {
 	Cookies              string
 	CookieFile           string
 	CookieRefreshCommand string
+	MiniMaxAPIKey        string
+	MiniMaxBaseURL       string
 }
 
 func Load() *Config {
@@ -36,6 +38,8 @@ func Load() *Config {
 		Cookies:              os.Getenv("DEEPSEEK_COOKIES"),
 		CookieFile:           os.Getenv("DEEPSEEK_COOKIE_FILE"),
 		CookieRefreshCommand: os.Getenv("DEEPSEEK_COOKIE_REFRESH_COMMAND"),
+		MiniMaxAPIKey:        strings.TrimSpace(os.Getenv("MINIMAX_API_KEY")),
+		MiniMaxBaseURL:       strings.TrimSpace(os.Getenv("MINIMAX_BASE_URL")),
 	}
 }
 

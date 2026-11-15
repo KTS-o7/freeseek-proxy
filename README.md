@@ -1,6 +1,6 @@
 # freeseek-proxy
 
-An OpenAI-compatible API proxy for [DeepSeek](https://chat.deepseek.com) and [Taalas (chatjimmy.ai)](https://chatjimmy.ai), enabling use with any OpenAI-compatible client including opencode, Claude Code, Cursor, LangChain, and more.
+An OpenAI-compatible API proxy for [DeepSeek](https://chat.deepseek.com), [Taalas (chatjimmy.ai)](https://chatjimmy.ai) and [MiniMax](https://platform.minimax.io), enabling use with any OpenAI-compatible client including opencode, Claude Code, Cursor, LangChain, and more.
 
 > **New in v2:** The entire stack is now a single self-contained Go binary — no Python, no Node.js, no runtime dependencies. Copy it to your VPS and run it.
 
@@ -12,6 +12,7 @@ An OpenAI-compatible API proxy for [DeepSeek](https://chat.deepseek.com) and [Ta
 - **OpenAI-compatible API** — drop-in replacement for `api.openai.com`
 - **DeepSeek models** — `deepseek-chat` and `deepseek-reasoner` (thinking on, returned as `reasoning_content`). chat.deepseek.com picks the model version
 - **Taalas (chatjimmy.ai)** — free Llama 3.1 8B model, no auth required
+- **MiniMax** — `MiniMax-M3` and `MiniMax-M3.1-Flash` through your MiniMax API key (pass-through, native tool calls)
 - Streaming and non-streaming responses
 - Tool-call compatibility (emulated via prompt injection)
 - Cloudflare bypass via Chrome TLS fingerprint spoofing (utls)
@@ -142,7 +143,14 @@ PORT=9123
 
 # Keep the DeepSeek chats the proxy creates (default: false, they are deleted after each reply)
 DEEPSEEK_KEEP_SESSIONS=false
+
+# Optional: MiniMax API key (pay-as-you-go or Token/M Plan key, sk-cp-...). Turns on the MiniMax-* models
+MINIMAX_API_KEY=
+# Optional: default https://api.minimax.io/v1 (mainland China accounts: https://api.minimaxi.com/v1)
+MINIMAX_BASE_URL=
 ```
+
+If you set `MINIMAX_API_KEY`, also set `API_KEY`. Without it, anyone who can reach the proxy can use your MiniMax quota (the proxy logs a warning at start).
 
 ### Getting Your DeepSeek Auth Token
 
@@ -162,8 +170,21 @@ A token stops working after a while. When DeepSeek rejects it, requests fail wit
 | `deepseek-chat` | DeepSeek, thinking off (turn on with `thinking_enabled`) | DeepSeek |
 | `deepseek-reasoner` | DeepSeek with thinking always on | DeepSeek |
 
-chat.deepseek.com decides which model version answers; these names do not pin a version. Its API accepts only one `model_type` ("default"); in November 2026 "expert" and other values all came back as "default". The thinking text comes back in `reasoning_content` (streamed as `delta.reasoning_content`), separate from the answer. The old names still work: `deepseek-v3` and `deepseek-coder` map to `deepseek-chat`; `deepseek-r1` and `deepseek-expert` map to `deepseek-reasoner`.
 | `taalas-llama3.1-8b` | Llama 3.1 8B (free, no auth) | chatjimmy.ai |
+| `MiniMax-M3` | MiniMax M3, 1M context (needs `MINIMAX_API_KEY`) | MiniMax |
+| `MiniMax-M3.1-Flash` | MiniMax M3.1 Flash, 1M context (needs `MINIMAX_API_KEY`) | MiniMax |
+
+chat.deepseek.com decides which model version answers; these names do not pin a version. Its API accepts only one `model_type` ("default"); in November 2026 "expert" and other values all came back as "default". The thinking text comes back in `reasoning_content` (streamed as `delta.reasoning_content`), separate from the answer. The old names still work: `deepseek-v3` and `deepseek-coder` map to `deepseek-chat`; `deepseek-r1` and `deepseek-expert` map to `deepseek-reasoner`.
+
+### MiniMax
+
+Any model ID that starts with `MiniMax-` goes to MiniMax's OpenAI-compatible API. The proxy sends your request body as is, with these changes:
+
+- The `Authorization` header is replaced with `MINIMAX_API_KEY`. Your proxy key never reaches MiniMax.
+- Proxy-only fields (`thinking_enabled`, `search_enabled`, `sessionId`, `parent_message_id`) are removed.
+- `reasoning_split` defaults to `true`, so thinking comes back in `reasoning_content` like the DeepSeek models. Send `"reasoning_split": false` to get `<think>` tags in `content` instead.
+
+All other fields (`tools`, `temperature`, `max_tokens`, `thinking`, `reasoning_effort`, `stream_options`, ...) go to MiniMax unchanged. Tool calls are MiniMax's own, not emulated. If MiniMax rejects the server's key, the proxy returns HTTP 503 (not 401), so clients do not think their proxy key is wrong.
 
 ---
 

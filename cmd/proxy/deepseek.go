@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/KTS-o7/freeseek-proxy/internal/client"
 	proxyerr "github.com/KTS-o7/freeseek-proxy/internal/errors"
+	"github.com/KTS-o7/freeseek-proxy/internal/minimax"
 	"github.com/KTS-o7/freeseek-proxy/internal/proxy"
 	"github.com/KTS-o7/freeseek-proxy/internal/taalas"
 	"github.com/KTS-o7/freeseek-proxy/internal/tools"
@@ -43,10 +45,32 @@ type chatRequest struct {
 	SessionID       string          `json:"sessionId"`
 }
 
-func handleChatCompletions(c *client.Client, keepSessions bool) http.HandlerFunc {
+// maxRequestBody matches nginx client_max_body_size.
+const maxRequestBody = 10 << 20
+
+func handleChatCompletions(c *client.Client, mm *minimax.Client, keepSessions bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBody))
+		if err != nil {
+			proxyerr.WriteJSON(w, proxyerr.Invalid("could not read request body (max 10 MB)"))
+			return
+		}
+		// MiniMax gets the body as sent, so route it before the DeepSeek-shaped decode.
+		var peek struct {
+			Model string `json:"model"`
+		}
+		_ = json.Unmarshal(raw, &peek)
+		if minimax.IsModel(peek.Model) {
+			if !mm.Enabled() {
+				proxyerr.WriteJSON(w, proxyerr.Invalid(fmt.Sprintf("model %q needs MINIMAX_API_KEY on the server", peek.Model)))
+				return
+			}
+			mm.Forward(w, r, raw)
+			return
+		}
+
 		var req chatRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.Unmarshal(raw, &req); err != nil {
 			proxyerr.WriteJSON(w, proxyerr.Invalid("could not parse request body as JSON"))
 			return
 		}
